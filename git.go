@@ -265,3 +265,122 @@ func GetCommitHistory(limit int, allBranches bool, author string, filePath strin
 
 	return commits, nil
 }
+
+// BranchInfo represents a git branch with metadata
+type BranchInfo struct {
+	Name       string
+	Current    bool
+	LastCommit string
+	Upstream   string
+}
+
+// GetBranches returns a list of all branches with metadata
+func GetBranches() ([]BranchInfo, error) {
+	// Get branch list with verbose info
+	cmd := exec.Command("git", "branch", "-vv")
+	output, err := cmd.Output()
+	if err != nil {
+		return nil, err
+	}
+
+	if len(output) == 0 {
+		return []BranchInfo{}, nil
+	}
+
+	lines := strings.Split(strings.TrimSpace(string(output)), "\n")
+	branches := make([]BranchInfo, 0, len(lines))
+
+	for _, line := range lines {
+		if len(line) < 2 {
+			continue
+		}
+
+		isCurrent := line[0] == '*'
+
+		// Remove the '* ' or '  ' prefix
+		line = strings.TrimSpace(line[2:])
+
+		// Parse: branchname hash [upstream] commit message
+		parts := strings.Fields(line)
+		if len(parts) < 2 {
+			continue
+		}
+
+		branch := BranchInfo{
+			Name:    parts[0],
+			Current: isCurrent,
+		}
+
+		// Extract upstream if present (in square brackets)
+		if len(parts) > 2 && strings.HasPrefix(parts[2], "[") {
+			// Find closing bracket
+			upstreamEnd := 2
+			for i := 2; i < len(parts); i++ {
+				if strings.HasSuffix(parts[i], "]") {
+					upstreamEnd = i
+					break
+				}
+			}
+			upstream := strings.Join(parts[2:upstreamEnd+1], " ")
+			branch.Upstream = strings.Trim(upstream, "[]")
+
+			// Commit message is after upstream
+			if upstreamEnd+1 < len(parts) {
+				branch.LastCommit = strings.Join(parts[upstreamEnd+1:], " ")
+			}
+		} else if len(parts) > 2 {
+			// No upstream, commit message starts at index 2
+			branch.LastCommit = strings.Join(parts[2:], " ")
+		}
+
+		branches = append(branches, branch)
+	}
+
+	return branches, nil
+}
+
+// CreateBranch creates a new branch
+func CreateBranch(branchName string) error {
+	cmd := exec.Command("git", "branch", branchName)
+	return cmd.Run()
+}
+
+// SwitchBranch switches to an existing branch
+func SwitchBranch(branchName string) error {
+	cmd := exec.Command("git", "checkout", branchName)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("%w: %s", err, string(output))
+	}
+	return nil
+}
+
+// CreateAndSwitchBranch creates and switches to a new branch
+func CreateAndSwitchBranch(branchName string) error {
+	cmd := exec.Command("git", "checkout", "-b", branchName)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("%w: %s", err, string(output))
+	}
+	return nil
+}
+
+// DeleteBranch deletes a branch (safe, won't delete if unmerged)
+func DeleteBranch(branchName string) error {
+	cmd := exec.Command("git", "branch", "-d", branchName)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("%w: %s", err, string(output))
+	}
+	return nil
+}
+
+// ForceDeleteBranch deletes a branch even if unmerged
+func ForceDeleteBranch(branchName string) error {
+	cmd := exec.Command("git", "branch", "-D", branchName)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("%w: %s", err, string(output))
+	}
+	return nil
+}

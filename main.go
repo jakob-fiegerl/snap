@@ -26,6 +26,7 @@ COMMANDS:
     changes             Show uncommitted changes
     sync [--from]       Smart push/pull - sync with remote repository
     stack [OPTIONS]     Show commit history as a visual timeline
+    branch [OPTIONS]    Manage branches - list, create, switch, or delete
     help, --help, -h    Show this help message
     version, --version  Show version information
 
@@ -47,6 +48,10 @@ EXAMPLES:
     snap stack --all           Show all branches
     snap stack --mine          Show only your commits
     snap stack README.md       Show history for a specific file
+    snap branch                List all branches (interactive)
+    snap branch new feature    Create and switch to 'feature' branch
+    snap branch switch main    Switch to 'main' branch
+    snap branch delete feature Delete 'feature' branch
     snap help                  Show this help message
     snap version               Show version information
 
@@ -224,6 +229,53 @@ func main() {
 			}
 		}
 
+		os.Exit(0)
+
+	case "branch":
+		// Parse subcommand and arguments
+		mode := "list" // Default to list mode
+		branchName := ""
+
+		if len(os.Args) > 2 {
+			subcommand := os.Args[2]
+			switch subcommand {
+			case "new", "create":
+				mode = "new"
+				if len(os.Args) > 3 {
+					branchName = os.Args[3]
+				}
+			case "switch", "checkout":
+				mode = "switch"
+				if len(os.Args) > 3 {
+					branchName = os.Args[3]
+				} else {
+					fmt.Println("Error: branch name required for switch")
+					fmt.Println("Usage: snap branch switch <branch-name>")
+					os.Exit(1)
+				}
+			case "delete", "remove":
+				mode = "delete"
+				if len(os.Args) > 3 {
+					branchName = os.Args[3]
+				} else {
+					fmt.Println("Error: branch name required for delete")
+					fmt.Println("Usage: snap branch delete <branch-name>")
+					os.Exit(1)
+				}
+			default:
+				fmt.Printf("Error: unknown subcommand '%s'\n", subcommand)
+				fmt.Println("\nValid subcommands: new, switch, delete")
+				fmt.Println("Or run 'snap branch' to list branches interactively")
+				os.Exit(1)
+			}
+		}
+
+		// Run the TUI
+		p := tea.NewProgram(initialBranchModel(mode, branchName))
+		if _, err := p.Run(); err != nil {
+			fmt.Printf("Error: %v\n", err)
+			os.Exit(1)
+		}
 		os.Exit(0)
 
 	case "save":

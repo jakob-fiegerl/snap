@@ -353,3 +353,336 @@ func commitChanges(message string) tea.Cmd {
 		return commitMsg{err: err}
 	}
 }
+
+// Branch TUI model
+type branchState int
+
+const (
+	branchStateList branchState = iota
+	branchStateCreating
+	branchStateSwitching
+	branchStateDeleting
+	branchStateDone
+	branchStateError
+)
+
+type branchModel struct {
+	state      branchState
+	branches   []BranchInfo
+	cursor     int
+	textInput  textinput.Model
+	spinner    spinner.Model
+	err        error
+	mode       string // "list", "new", "switch", "delete"
+	branchName string
+	showHelp   bool
+}
+
+type getBranchesMsg struct {
+	branches []BranchInfo
+	err      error
+}
+
+type createBranchMsg struct {
+	err error
+}
+
+type switchBranchMsg struct {
+	err error
+}
+
+type deleteBranchMsg struct {
+	err error
+}
+
+func initialBranchModel(mode string, branchName string) branchModel {
+	s := spinner.New()
+	s.Spinner = spinner.Dot
+	s.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("#7D56F4"))
+
+	ti := textinput.New()
+	ti.Placeholder = "Enter branch name..."
+	ti.Focus()
+	ti.CharLimit = 100
+	ti.Width = 40
+
+	return branchModel{
+		state:      branchStateList,
+		spinner:    s,
+		textInput:  ti,
+		mode:       mode,
+		branchName: branchName,
+		showHelp:   mode == "list",
+	}
+}
+
+func (m branchModel) Init() tea.Cmd {
+	return tea.Batch(m.spinner.Tick, getBranches)
+}
+
+func (m branchModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		// Handle text input in creating mode
+		if m.state == branchStateCreating && m.mode == "new" {
+			switch msg.String() {
+			case "ctrl+c", "q":
+				return m, tea.Quit
+			case "enter":
+				branchName := strings.TrimSpace(m.textInput.Value())
+				if branchName == "" {
+					m.state = branchStateError
+					m.err = fmt.Errorf("branch name cannot be empty")
+					return m, tea.Quit
+				}
+				m.branchName = branchName
+				return m, createAndSwitchBranch(branchName)
+			default:
+				var cmd tea.Cmd
+				m.textInput, cmd = m.textInput.Update(msg)
+				return m, cmd
+			}
+		}
+
+		// Handle list navigation and actions
+		if m.state == branchStateList {
+			switch msg.String() {
+			case "ctrl+c", "q":
+				return m, tea.Quit
+			case "up", "k":
+				if m.cursor > 0 {
+					m.cursor--
+				}
+			case "down", "j":
+				if m.cursor < len(m.branches)-1 {
+					m.cursor++
+				}
+			case "enter":
+				if len(m.branches) > 0 && m.cursor < len(m.branches) {
+					selectedBranch := m.branches[m.cursor]
+					if !selectedBranch.Current {
+						m.branchName = selectedBranch.Name
+						m.state = branchStateSwitching
+						return m, switchToBranch(selectedBranch.Name)
+					}
+				}
+			case "n":
+				// Create new branch
+				m.mode = "new"
+				m.state = branchStateCreating
+				m.textInput.Focus()
+				return m, textinput.Blink
+			case "d":
+				// Delete selected branch
+				if len(m.branches) > 0 && m.cursor < len(m.branches) {
+					selectedBranch := m.branches[m.cursor]
+					if selectedBranch.Current {
+						m.state = branchStateError
+						m.err = fmt.Errorf("cannot delete current branch")
+						return m, tea.Quit
+					}
+					m.branchName = selectedBranch.Name
+					m.state = branchStateDeleting
+					return m, deleteBranchCmd(selectedBranch.Name)
+				}
+			case "?":
+				m.showHelp = !m.showHelp
+			}
+		}
+
+	case spinner.TickMsg:
+		var cmd tea.Cmd
+		m.spinner, cmd = m.spinner.Update(msg)
+		return m, cmd
+
+	case getBranchesMsg:
+		if msg.err != nil {
+			m.state = branchStateError
+			m.err = msg.err
+			return m, tea.Quit
+		}
+		m.branches = msg.branches
+
+		// Handle different modes
+		switch m.mode {
+		case "new":
+			if m.branchName == "" {
+				// Interactive mode - show input
+				m.state = branchStateCreating
+				return m, textinput.Blink
+			} else {
+				// Direct mode - create immediately
+				return m, createAndSwitchBranch(m.branchName)
+			}
+		case "switch":
+			// Switch to specified branch
+			m.state = branchStateSwitching
+			return m, switchToBranch(m.branchName)
+		case "delete":
+			// Delete specified branch
+			m.state = branchStateDeleting
+			return m, deleteBranchCmd(m.branchName)
+		default:
+			// List mode - just display
+			m.state = branchStateList
+		}
+		return m, nil
+
+	case createBranchMsg:
+		if msg.err != nil {
+			m.state = branchStateError
+			m.err = msg.err
+			return m, tea.Quit
+		}
+		m.state = branchStateDone
+		return m, tea.Quit
+
+	case switchBranchMsg:
+		if msg.err != nil {
+			m.state = branchStateError
+			m.err = msg.err
+			return m, tea.Quit
+		}
+		m.state = branchStateDone
+		return m, tea.Quit
+
+	case deleteBranchMsg:
+		if msg.err != nil {
+			m.state = branchStateError
+			m.err = msg.err
+			return m, tea.Quit
+		}
+		m.state = branchStateDone
+		return m, tea.Quit
+	}
+
+	return m, nil
+}
+
+func (m branchModel) View() string {
+	switch m.state {
+	case branchStateList:
+		var s strings.Builder
+
+		titleStyle := lipgloss.NewStyle().
+			Bold(true).
+			Foreground(lipgloss.Color("#7D56F4"))
+
+		s.WriteString(titleStyle.Render("Branches"))
+		s.WriteString("\n\n")
+
+		currentStyle := lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#04B575")).
+			Bold(true)
+		normalStyle := lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#FFFFFF"))
+		cursorStyle := lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#7D56F4")).
+			Bold(true)
+		dimStyle := lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#888888"))
+
+		for i, branch := range m.branches {
+			cursor := "  "
+			if i == m.cursor {
+				cursor = cursorStyle.Render("→ ")
+			}
+
+			branchMark := " "
+			if branch.Current {
+				branchMark = "*"
+			}
+
+			branchStyle := normalStyle
+			if branch.Current {
+				branchStyle = currentStyle
+			}
+
+			s.WriteString(fmt.Sprintf("%s%s %s",
+				cursor,
+				branchMark,
+				branchStyle.Render(branch.Name),
+			))
+
+			if branch.Upstream != "" {
+				s.WriteString(fmt.Sprintf(" %s", dimStyle.Render(fmt.Sprintf("[%s]", branch.Upstream))))
+			}
+
+			if branch.LastCommit != "" {
+				s.WriteString(fmt.Sprintf(" %s", dimStyle.Render(branch.LastCommit)))
+			}
+
+			s.WriteString("\n")
+		}
+
+		if m.showHelp {
+			s.WriteString("\n")
+			helpStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#888888"))
+			s.WriteString(helpStyle.Render("↑/k: up  ↓/j: down  Enter: switch  n: new branch  d: delete  ?: help  q: quit"))
+		} else {
+			s.WriteString("\n")
+			helpStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#888888"))
+			s.WriteString(helpStyle.Render("Press ? for help"))
+		}
+
+		return s.String()
+
+	case branchStateCreating:
+		if m.mode == "new" && m.branchName == "" {
+			return fmt.Sprintf("\n%s\n%s\n",
+				lipgloss.NewStyle().Foreground(lipgloss.Color("#7D56F4")).Bold(true).Render("Create new branch"),
+				m.textInput.View(),
+			)
+		}
+		return fmt.Sprintf("%s Creating and switching to branch '%s'...", m.spinner.View(), m.branchName)
+
+	case branchStateSwitching:
+		return fmt.Sprintf("%s Switching to branch '%s'...", m.spinner.View(), m.branchName)
+
+	case branchStateDeleting:
+		return fmt.Sprintf("%s Deleting branch '%s'...", m.spinner.View(), m.branchName)
+
+	case branchStateDone:
+		switch m.mode {
+		case "new":
+			return successStyle.Render(fmt.Sprintf("✓ Created and switched to branch '%s'", m.branchName))
+		case "switch":
+			return successStyle.Render(fmt.Sprintf("✓ Switched to branch '%s'", m.branchName))
+		case "delete":
+			return successStyle.Render(fmt.Sprintf("✓ Deleted branch '%s'", m.branchName))
+		default:
+			return successStyle.Render("✓ Done")
+		}
+
+	case branchStateError:
+		return errorStyle.Render(fmt.Sprintf("✗ Error: %s", m.err))
+	}
+
+	return ""
+}
+
+func getBranches() tea.Msg {
+	branches, err := GetBranches()
+	return getBranchesMsg{branches: branches, err: err}
+}
+
+func createAndSwitchBranch(branchName string) tea.Cmd {
+	return func() tea.Msg {
+		err := CreateAndSwitchBranch(branchName)
+		return createBranchMsg{err: err}
+	}
+}
+
+func switchToBranch(branchName string) tea.Cmd {
+	return func() tea.Msg {
+		err := SwitchBranch(branchName)
+		return switchBranchMsg{err: err}
+	}
+}
+
+func deleteBranchCmd(branchName string) tea.Cmd {
+	return func() tea.Msg {
+		err := DeleteBranch(branchName)
+		return deleteBranchMsg{err: err}
+	}
+}

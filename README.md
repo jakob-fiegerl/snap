@@ -25,9 +25,9 @@ Snap is currently under active development. Here's what works today:
 | `snap save` | ✅ Working | Commit changes (with AI or custom message) |
 | `snap sync` | ✅ Working | Smart push/pull with conflict detection |
 | `snap stack` | ✅ Working | Visual commit history timeline |
+| `snap branch` | ✅ Working | Create/switch/delete branches with interactive UI |
 | `snap undo` | 🚧 Planned | Undo last commit |
 | `snap goto` | 🚧 Planned | Time travel through history |
-| `snap branch` | 🚧 Planned | Create/switch branches |
 | `snap fork` | 🚧 Planned | Clone repository |
 | `snap merge` | 🚧 Planned | Merge branches |
 | `snap diff` | 🚧 Planned | Show file changes |
@@ -85,13 +85,34 @@ snap goto "before refactor"
 snap goto abc123    # Still supports hashes
 ```
 
-### `snap branch <name>`
-Create and switch to a branch. No checkout confusion.
+### `snap branch [subcommand] [name]`
+Manage branches with an intuitive, interactive interface. No checkout confusion.
 
 ```bash
-snap branch feature-x    # Create and switch
-snap branch              # Show all branches
-snap branch -d old-name  # Delete a branch
+snap branch                  # Interactive list - navigate and switch branches
+snap branch new feature-x    # Create and switch to new branch
+snap branch switch main      # Switch to existing branch
+snap branch delete old-name  # Delete a branch
+```
+
+**Interactive mode features:**
+- Navigate with arrow keys or `j`/`k`
+- Press `Enter` to switch to selected branch
+- Press `n` to create a new branch
+- Press `d` to delete selected branch (can't delete current branch)
+- Press `?` to toggle help
+- Current branch highlighted in green with `*` marker
+- Shows upstream tracking and last commit message
+
+**Example interactive view:**
+```
+Branches
+
+  * main [origin/main] Fixed the login bug
+→   feature-login Add login form
+    hotfix-123 Quick bug fix
+
+Press ? for help
 ```
 
 ### `snap sync`
@@ -204,6 +225,7 @@ Behind the scenes:
 - `snap sync` → `git pull && git push` (with conflict detection)
 - `snap undo` → `git reset` (soft/hard depending on flags)
 - `snap goto` → `git checkout` with smart date/message parsing
+- `snap branch` → `git branch` + `git checkout -b` with interactive TUI
 
 ## Philosophy
 
@@ -224,7 +246,9 @@ Git's complexity comes from its history and Unix philosophy. Snap reimagines ver
 | `git add . && git commit -m "msg"` | `snap save "msg"` |
 | `git commit --amend` | `snap undo` |
 | `git checkout <ref>` | `snap goto <ref>` |
-| `git checkout -b branch` | `snap branch branch` |
+| `git checkout -b branch` | `snap branch new branch` |
+| `git branch -d branch` | `snap branch delete branch` |
+| `git checkout branch` | `snap branch switch branch` |
 | `git pull && git push` | `snap sync` |
 | `git clone` | `snap fork` |
 | `git log` | `snap stack` |
@@ -247,7 +271,7 @@ snap undo
 snap save "Initial setup (complete)"
 
 # Create a new feature
-snap branch user-login
+snap branch new user-login
 
 # Save progress
 snap save "Add login form"
