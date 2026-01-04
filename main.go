@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"strconv"
-	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -139,99 +138,12 @@ func main() {
 			}
 		}
 
-		// Check if remote exists
-		hasRemote, err := CheckRemoteExists()
-		if err != nil {
-			fmt.Printf("Error: failed to check remote: %v\n", err)
+		// Run the TUI
+		p := tea.NewProgram(initialSyncModel(pullOnly))
+		if _, err := p.Run(); err != nil {
+			fmt.Printf("Error: %v\n", err)
 			os.Exit(1)
 		}
-		if !hasRemote {
-			fmt.Println("Error: no remote repository configured")
-			fmt.Println("Add a remote with: git remote add origin <url>")
-			os.Exit(1)
-		}
-
-		// Check for uncommitted changes
-		hasChanges, err := CheckForUncommittedChanges()
-		if err != nil {
-			fmt.Printf("Error: failed to check for changes: %v\n", err)
-			os.Exit(1)
-		}
-		if hasChanges {
-			fmt.Println("Warning: You have uncommitted changes")
-			fmt.Println("Run 'snap save' first to commit your changes")
-			os.Exit(1)
-		}
-
-		// Get current branch
-		branch, err := GetCurrentBranch()
-		if err != nil {
-			fmt.Printf("Error: failed to get current branch: %v\n", err)
-			os.Exit(1)
-		}
-
-		// Pull changes
-		fmt.Println("⏳ Pulling changes from remote...")
-		pullOutput, pullErr := PullChanges()
-		if pullErr != nil {
-			// Check if it's a conflict
-			if strings.Contains(pullOutput, "CONFLICT") {
-				fmt.Println("✗ Merge conflict detected!")
-				fmt.Println("\nConflicting files:")
-				fmt.Println(pullOutput)
-				fmt.Println("\nResolve conflicts manually, then run 'snap save' to commit")
-				os.Exit(1)
-			}
-			fmt.Printf("Error pulling changes: %v\n", pullErr)
-			fmt.Println(pullOutput)
-			os.Exit(1)
-		}
-
-		if strings.Contains(pullOutput, "Already up to date") {
-			fmt.Println("✓ Already up to date with remote")
-		} else {
-			fmt.Println("✓ Pulled changes successfully")
-		}
-
-		// If --from flag, only pull
-		if pullOnly {
-			os.Exit(0)
-		}
-
-		// Push changes
-		fmt.Println("⏳ Pushing changes to remote...")
-
-		// Check if upstream is set
-		hasUpstream, err := HasUpstreamBranch()
-		if err != nil {
-			fmt.Printf("Error: failed to check upstream: %v\n", err)
-			os.Exit(1)
-		}
-
-		var pushOutput string
-		var pushErr error
-
-		if !hasUpstream {
-			// First push, set upstream
-			fmt.Printf("Setting upstream for branch '%s'...\n", branch)
-			pushOutput, pushErr = PushWithUpstream(branch)
-		} else {
-			pushOutput, pushErr = PushChanges()
-		}
-
-		if pushErr != nil {
-			fmt.Printf("Error pushing changes: %v\n", pushErr)
-			fmt.Println(pushOutput)
-			os.Exit(1)
-		}
-
-		if strings.Contains(pushOutput, "Everything up-to-date") {
-			fmt.Println("✓ Everything up-to-date with remote")
-		} else {
-			fmt.Println("✓ Pushed changes successfully")
-		}
-
-		fmt.Println("\n✓ Sync complete!")
 		os.Exit(0)
 
 	case "save":
