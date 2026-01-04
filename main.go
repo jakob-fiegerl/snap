@@ -3,9 +3,12 @@ package main
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"strconv"
+	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 )
 
 const version = "1.0.0"
@@ -22,6 +25,7 @@ COMMANDS:
     save [MESSAGE]      Save changes with AI-generated or custom commit message
     changes             Show uncommitted changes
     sync [--from]       Smart push/pull - sync with remote repository
+    stack [OPTIONS]     Show commit history as a visual timeline
     help, --help, -h    Show this help message
     version, --version  Show version information
 
@@ -39,6 +43,10 @@ EXAMPLES:
     snap save --seed 123       Use a custom seed for AI generation
     snap sync                  Push and pull changes automatically
     snap sync --from           Only pull changes from remote
+    snap stack                 Show commit history
+    snap stack --all           Show all branches
+    snap stack --mine          Show only your commits
+    snap stack README.md       Show history for a specific file
     snap help                  Show this help message
     snap version               Show version information
 
@@ -144,6 +152,74 @@ func main() {
 			fmt.Printf("Error: %v\n", err)
 			os.Exit(1)
 		}
+		os.Exit(0)
+
+	case "stack":
+		// Parse flags
+		allBranches := false
+		mineOnly := false
+		filePath := ""
+		limit := 20 // Default to 20 commits
+
+		for i := 2; i < len(os.Args); i++ {
+			arg := os.Args[i]
+			if arg == "--all" {
+				allBranches = true
+			} else if arg == "--mine" {
+				mineOnly = true
+			} else if !strings.HasPrefix(arg, "-") {
+				// Assume it's a file path
+				filePath = arg
+			}
+		}
+
+		// Get git user name for --mine filter
+		author := ""
+		if mineOnly {
+			cmd := exec.Command("git", "config", "user.name")
+			output, err := cmd.Output()
+			if err != nil {
+				fmt.Printf("Error: failed to get git user name: %v\n", err)
+				os.Exit(1)
+			}
+			author = strings.TrimSpace(string(output))
+		}
+
+		// Get commit history
+		commits, err := GetCommitHistory(limit, allBranches, author, filePath)
+		if err != nil {
+			fmt.Printf("Error: failed to get commit history: %v\n", err)
+			os.Exit(1)
+		}
+
+		if len(commits) == 0 {
+			fmt.Println("No commits yet")
+			os.Exit(0)
+		}
+
+		// Render the stack
+		commitStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#7D56F4")).Bold(true)
+		timeStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#888888"))
+		hashStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#888888"))
+		pipeStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#7D56F4"))
+
+		for i, commit := range commits {
+			// Show bullet and message
+			fmt.Printf("%s %s %s\n",
+				commitStyle.Render("●"),
+				timeStyle.Render(commit.RelativeTime),
+				commit.Message,
+			)
+
+			// Show hash on same line
+			fmt.Printf("  %s\n", hashStyle.Render(commit.ShortHash))
+
+			// Show pipe between commits (except for last one)
+			if i < len(commits)-1 {
+				fmt.Println(pipeStyle.Render("│"))
+			}
+		}
+
 		os.Exit(0)
 
 	case "save":

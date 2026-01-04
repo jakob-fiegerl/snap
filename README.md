@@ -24,12 +24,12 @@ Snap is currently under active development. Here's what works today:
 | `snap changes` | ✅ Working | Show uncommitted changes with colors |
 | `snap save` | ✅ Working | Commit changes (with AI or custom message) |
 | `snap sync` | ✅ Working | Smart push/pull with conflict detection |
+| `snap stack` | ✅ Working | Visual commit history timeline |
 | `snap undo` | 🚧 Planned | Undo last commit |
 | `snap goto` | 🚧 Planned | Time travel through history |
 | `snap branch` | 🚧 Planned | Create/switch branches |
 | `snap fork` | 🚧 Planned | Clone repository |
 | `snap merge` | 🚧 Planned | Merge branches |
-| `snap stack` | 🚧 Planned | Visual commit history |
 | `snap diff` | 🚧 Planned | Show file changes |
 | `snap ignore` | 🚧 Planned | Add to .gitignore |
 
@@ -104,6 +104,28 @@ snap sync --from # Only pull changes from remote
 - Pushes your commits to remote
 - Automatically sets upstream branch on first push
 
+### `snap stack`
+Visual commit history. Shows your saves as a clean timeline.
+
+```bash
+snap stack           # Show recent commits
+snap stack --all     # Include all branches
+snap stack --mine    # Only your commits
+snap stack README.md # History for specific file
+```
+
+**Example output:**
+```
+● 2 minutes ago - Fixed the login bug
+  abc123f
+│
+● 2 hours ago - Added user authentication  
+  def456a
+│
+● yesterday - Initial project setup
+  789beef
+```
+
 ### `snap fork <url>`
 Clone a repository (because that's what it actually is).
 
@@ -116,13 +138,6 @@ Merge branches. Auto-detects conflicts and opens a clean conflict resolver.
 
 ```bash
 snap merge feature-x
-```
-
-### `snap stack`
-Visual history. Shows your save history as a clean timeline.
-
-```bash
-snap stack
 ```
 
 ### `snap diff [file]`
@@ -180,9 +195,10 @@ Behind the scenes:
 - `snap init` → `git init`
 - `snap changes` → `git status --short`
 - `snap save` → `git add -A && git commit`
+- `snap stack` → `git log` with visual formatting
+- `snap sync` → `git pull && git push` (with conflict detection)
 - `snap undo` → `git reset` (soft/hard depending on flags)
 - `snap goto` → `git checkout` with smart date/message parsing
-- `snap sync` → `git pull && git push` (with conflict detection)
 
 ## Philosophy
 
@@ -232,6 +248,9 @@ snap branch user-login
 snap save "Add login form"
 snap save "Add validation"
 
+# Check what you've done
+snap stack
+
 # Sync your work with remote
 snap sync
 
@@ -241,6 +260,9 @@ snap merge user-login
 
 # Push everything
 snap sync
+
+# See full project history
+snap stack --all
 ```
 
 ## License

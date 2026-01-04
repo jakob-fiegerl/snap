@@ -203,3 +203,65 @@ func IsGitRepository() bool {
 	err := cmd.Run()
 	return err == nil
 }
+
+// CommitInfo represents a single commit in the history
+type CommitInfo struct {
+	Hash         string
+	ShortHash    string
+	Message      string
+	Author       string
+	Date         string
+	RelativeTime string
+}
+
+// GetCommitHistory returns a list of commits with formatting
+func GetCommitHistory(limit int, allBranches bool, author string, filePath string) ([]CommitInfo, error) {
+	args := []string{"log", "--pretty=format:%H|%h|%s|%an|%ai|%ar"}
+
+	if limit > 0 {
+		args = append(args, fmt.Sprintf("-%d", limit))
+	}
+
+	if allBranches {
+		args = append(args, "--all")
+	}
+
+	if author != "" {
+		args = append(args, fmt.Sprintf("--author=%s", author))
+	}
+
+	if filePath != "" {
+		args = append(args, "--", filePath)
+	}
+
+	cmd := exec.Command("git", args...)
+	output, err := cmd.Output()
+	if err != nil {
+		return nil, err
+	}
+
+	if len(output) == 0 {
+		return []CommitInfo{}, nil
+	}
+
+	lines := strings.Split(strings.TrimSpace(string(output)), "\n")
+	commits := make([]CommitInfo, 0, len(lines))
+
+	for _, line := range lines {
+		parts := strings.SplitN(line, "|", 6)
+		if len(parts) != 6 {
+			continue
+		}
+
+		commits = append(commits, CommitInfo{
+			Hash:         parts[0],
+			ShortHash:    parts[1],
+			Message:      parts[2],
+			Author:       parts[3],
+			Date:         parts[4],
+			RelativeTime: parts[5],
+		})
+	}
+
+	return commits, nil
+}
