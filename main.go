@@ -27,6 +27,7 @@ COMMANDS:
     sync [--from]       Smart push/pull - sync with remote repository
     stack [OPTIONS]     Show commit history as a visual timeline
     branch [OPTIONS]    Manage branches - list, create, switch, or delete
+    replay <branch>     Replay commits onto another branch (rebase)
     help, --help, -h    Show this help message
     version, --version  Show version information
 
@@ -52,6 +53,8 @@ EXAMPLES:
     snap branch new feature    Create and switch to 'feature' branch
     snap branch switch main    Switch to 'main' branch
     snap branch delete feature Delete 'feature' branch
+    snap replay main           Replay current branch commits onto main
+    snap replay main -i        Interactive replay (rebase -i)
     snap help                  Show this help message
     snap version               Show version information
 
@@ -272,6 +275,42 @@ func main() {
 
 		// Run the TUI
 		p := tea.NewProgram(initialBranchModel(mode, branchName))
+		if _, err := p.Run(); err != nil {
+			fmt.Printf("Error: %v\n", err)
+			os.Exit(1)
+		}
+		os.Exit(0)
+
+	case "replay":
+		// Parse arguments
+		if len(os.Args) < 3 {
+			fmt.Println("Error: target branch required")
+			fmt.Println("Usage: snap replay <branch> [--interactive|-i]")
+			fmt.Println("\nExample:")
+			fmt.Println("  snap replay main       # Replay current branch onto main")
+			fmt.Println("  snap replay main -i    # Interactive replay")
+			os.Exit(1)
+		}
+
+		ontoBranch := os.Args[2]
+		interactive := false
+
+		// Check for interactive flag
+		for i := 3; i < len(os.Args); i++ {
+			if os.Args[i] == "--interactive" || os.Args[i] == "-i" {
+				interactive = true
+				break
+			}
+		}
+
+		if interactive {
+			fmt.Println("Error: interactive replay not yet implemented")
+			fmt.Println("Use 'snap replay <branch>' for non-interactive replay")
+			os.Exit(1)
+		}
+
+		// Run the TUI
+		p := tea.NewProgram(initialReplayModel(ontoBranch, interactive))
 		if _, err := p.Run(); err != nil {
 			fmt.Printf("Error: %v\n", err)
 			os.Exit(1)

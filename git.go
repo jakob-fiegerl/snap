@@ -384,3 +384,109 @@ func ForceDeleteBranch(branchName string) error {
 	}
 	return nil
 }
+
+// ReplayCommits rebases current branch onto the specified branch
+func ReplayCommits(ontoBranch string) (string, error) {
+	cmd := exec.Command("git", "rebase", ontoBranch)
+	output, err := cmd.CombinedOutput()
+	return string(output), err
+}
+
+// ReplayCommitsInteractive starts an interactive rebase
+func ReplayCommitsInteractive(ontoBranch string) error {
+	// Interactive rebase requires a TTY, so we can't use CombinedOutput
+	// We need to use the GIT_SEQUENCE_EDITOR to handle the interactive part
+	return fmt.Errorf("interactive rebase must be handled through TUI")
+}
+
+// AbortRebase aborts an ongoing rebase operation
+func AbortRebase() error {
+	cmd := exec.Command("git", "rebase", "--abort")
+	return cmd.Run()
+}
+
+// ContinueRebase continues a rebase after resolving conflicts
+func ContinueRebase() (string, error) {
+	cmd := exec.Command("git", "rebase", "--continue")
+	output, err := cmd.CombinedOutput()
+	return string(output), err
+}
+
+// SkipRebaseCommit skips the current commit during rebase
+func SkipRebaseCommit() (string, error) {
+	cmd := exec.Command("git", "rebase", "--skip")
+	output, err := cmd.CombinedOutput()
+	return string(output), err
+}
+
+// CheckRebaseInProgress checks if a rebase is currently in progress
+func CheckRebaseInProgress() (bool, error) {
+	// Check for rebase-merge or rebase-apply directory
+	cmd := exec.Command("git", "rev-parse", "--git-path", "rebase-merge")
+	output, err := cmd.Output()
+	if err != nil {
+		return false, nil
+	}
+
+	rebasePath := strings.TrimSpace(string(output))
+	if rebasePath == "" {
+		return false, nil
+	}
+
+	// Check if the directory exists
+	cmd = exec.Command("test", "-d", rebasePath)
+	err = cmd.Run()
+	return err == nil, nil
+}
+
+// GetRebaseCommits gets the list of commits that would be replayed
+func GetRebaseCommits(ontoBranch string) ([]CommitInfo, error) {
+	// Get commits in current branch that are not in ontoBranch
+	currentBranch, err := GetCurrentBranch()
+	if err != nil {
+		return nil, err
+	}
+
+	// Use git log to show commits that will be replayed
+	args := []string{"log", "--pretty=format:%H|%h|%s|%an|%ai|%ar", fmt.Sprintf("%s..%s", ontoBranch, currentBranch)}
+	cmd := exec.Command("git", args...)
+	output, err := cmd.Output()
+	if err != nil {
+		return nil, err
+	}
+
+	if len(output) == 0 {
+		return []CommitInfo{}, nil
+	}
+
+	lines := strings.Split(strings.TrimSpace(string(output)), "\n")
+	commits := make([]CommitInfo, 0, len(lines))
+
+	for _, line := range lines {
+		parts := strings.SplitN(line, "|", 6)
+		if len(parts) != 6 {
+			continue
+		}
+
+		commits = append(commits, CommitInfo{
+			Hash:         parts[0],
+			ShortHash:    parts[1],
+			Message:      parts[2],
+			Author:       parts[3],
+			Date:         parts[4],
+			RelativeTime: parts[5],
+		})
+	}
+
+	return commits, nil
+}
+
+// GetMergeBase finds the common ancestor between two branches
+func GetMergeBase(branch1, branch2 string) (string, error) {
+	cmd := exec.Command("git", "merge-base", branch1, branch2)
+	output, err := cmd.Output()
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(output)), nil
+}

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -231,5 +232,166 @@ func TestGetCurrentBranch(t *testing.T) {
 
 	if !validBranches[branch] {
 		t.Logf("Warning: unexpected default branch '%s' (expected 'main' or 'master')", branch)
+	}
+}
+
+func TestGetRebaseCommits(t *testing.T) {
+	_, cleanup := setupTestRepo(t)
+	defer cleanup()
+
+	// Create a feature branch
+	err := CreateAndSwitchBranch("feature")
+	if err != nil {
+		t.Fatalf("CreateAndSwitchBranch failed: %v", err)
+	}
+
+	// Add some commits on feature branch
+	for i := 1; i <= 3; i++ {
+		testFile := filepath.Join(".", fmt.Sprintf("feature%d.txt", i))
+		if err := os.WriteFile(testFile, []byte(fmt.Sprintf("feature %d", i)), 0644); err != nil {
+			t.Fatalf("Failed to create test file: %v", err)
+		}
+		exec.Command("git", "add", ".").Run()
+		exec.Command("git", "commit", "-m", fmt.Sprintf("Feature commit %d", i)).Run()
+	}
+
+	// Get the commits that would be replayed onto main/master
+	commits, err := GetRebaseCommits("main")
+	if err != nil {
+		// Try master if main doesn't exist
+		commits, err = GetRebaseCommits("master")
+		if err != nil {
+			t.Fatalf("GetRebaseCommits failed: %v", err)
+		}
+	}
+
+	if len(commits) != 3 {
+		t.Errorf("Expected 3 commits to replay, got %d", len(commits))
+	}
+
+	// Verify commits are in correct order (newest first)
+	for i, commit := range commits {
+		expectedMsg := fmt.Sprintf("Feature commit %d", 3-i)
+		if commit.Message != expectedMsg {
+			t.Errorf("Commit %d: expected message '%s', got '%s'", i, expectedMsg, commit.Message)
+		}
+	}
+}
+
+func TestReplayCommits(t *testing.T) {
+	_, cleanup := setupTestRepo(t)
+	defer cleanup()
+
+	// Get the main branch name
+	mainBranch, err := GetCurrentBranch()
+	if err != nil {
+		t.Fatalf("GetCurrentBranch failed: %v", err)
+	}
+
+	// Add a commit to main
+	testFile := filepath.Join(".", "main.txt")
+	if err := os.WriteFile(testFile, []byte("main content"), 0644); err != nil {
+		t.Fatalf("Failed to create test file: %v", err)
+	}
+	exec.Command("git", "add", ".").Run()
+	exec.Command("git", "commit", "-m", "Main commit").Run()
+
+	// Create and switch to feature branch from the initial commit
+	exec.Command("git", "checkout", "HEAD~1").Run()
+	err = CreateAndSwitchBranch("feature")
+	if err != nil {
+		t.Fatalf("CreateAndSwitchBranch failed: %v", err)
+	}
+
+	// Add commits on feature branch
+	for i := 1; i <= 2; i++ {
+		testFile := filepath.Join(".", fmt.Sprintf("feature%d.txt", i))
+		if err := os.WriteFile(testFile, []byte(fmt.Sprintf("feature %d", i)), 0644); err != nil {
+			t.Fatalf("Failed to create test file: %v", err)
+		}
+		exec.Command("git", "add", ".").Run()
+		exec.Command("git", "commit", "-m", fmt.Sprintf("Feature commit %d", i)).Run()
+	}
+
+	// Replay feature commits onto main
+	output, err := ReplayCommits(mainBranch)
+	if err != nil {
+		t.Fatalf("ReplayCommits failed: %v\nOutput: %s", err, output)
+	}
+
+	// Verify we're still on feature branch
+	currentBranch, err := GetCurrentBranch()
+	if err != nil {
+		t.Fatalf("GetCurrentBranch failed: %v", err)
+	}
+
+	if currentBranch != "feature" {
+		t.Errorf("Expected to be on 'feature' branch, got '%s'", currentBranch)
+	}
+
+	// Verify the commits are there
+	commits, err := GetCommitHistory(5, false, "", "")
+	if err != nil {
+		t.Fatalf("GetCommitHistory failed: %v", err)
+	}
+
+	// Should have at least the feature commits plus main commit
+	if len(commits) < 3 {
+		t.Errorf("Expected at least 3 commits after replay, got %d", len(commits))
+	}
+}
+
+func TestCheckRebaseInProgress(t *testing.T) {
+	_, cleanup := setupTestRepo(t)
+	defer cleanup()
+
+	// Initially, no rebase should be in progress
+	inProgress, err := CheckRebaseInProgress()
+	if err != nil {
+		t.Fatalf("CheckRebaseInProgress failed: %v", err)
+	}
+
+	if inProgress {
+		t.Error("Expected no rebase in progress")
+	}
+}
+
+func TestGetMergeBase(t *testing.T) {
+	_, cleanup := setupTestRepo(t)
+	defer cleanup()
+
+	// Get the main branch
+	mainBranch, err := GetCurrentBranch()
+	if err != nil {
+		t.Fatalf("GetCurrentBranch failed: %v", err)
+	}
+
+	// Create a feature branch
+	err = CreateAndSwitchBranch("feature")
+	if err != nil {
+		t.Fatalf("CreateAndSwitchBranch failed: %v", err)
+	}
+
+	// Add a commit
+	testFile := filepath.Join(".", "feature.txt")
+	if err := os.WriteFile(testFile, []byte("feature"), 0644); err != nil {
+		t.Fatalf("Failed to create test file: %v", err)
+	}
+	exec.Command("git", "add", ".").Run()
+	exec.Command("git", "commit", "-m", "Feature commit").Run()
+
+	// Get merge base
+	mergeBase, err := GetMergeBase(mainBranch, "feature")
+	if err != nil {
+		t.Fatalf("GetMergeBase failed: %v", err)
+	}
+
+	if mergeBase == "" {
+		t.Error("Expected non-empty merge base")
+	}
+
+	// Verify it's a valid commit hash (40 characters)
+	if len(mergeBase) != 40 {
+		t.Errorf("Expected merge base to be 40 characters, got %d", len(mergeBase))
 	}
 }

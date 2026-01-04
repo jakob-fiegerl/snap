@@ -26,6 +26,7 @@ Snap is currently under active development. Here's what works today:
 | `snap sync` | ✅ Working | Smart push/pull with conflict detection |
 | `snap stack` | ✅ Working | Visual commit history timeline |
 | `snap branch` | ✅ Working | Create/switch/delete branches with interactive UI |
+| `snap replay` | ✅ Working | Replay commits onto another branch (rebase) |
 | `snap undo` | 🚧 Planned | Undo last commit |
 | `snap goto` | 🚧 Planned | Time travel through history |
 | `snap fork` | 🚧 Planned | Clone repository |
@@ -159,6 +160,42 @@ Clone a repository (because that's what it actually is).
 snap fork https://github.com/user/repo
 ```
 
+### `snap replay <branch>`
+Replay your commits onto another branch. This is what Git calls "rebasing", but with a name that makes sense.
+
+```bash
+snap replay main           # Replay current branch commits onto main
+snap replay main -i        # Interactive replay (coming soon)
+```
+
+**What it does:**
+- Shows you exactly which commits will be replayed
+- Confirms before making changes
+- Handles conflicts gracefully with clear instructions
+- Prevents common mistakes (already up-to-date, same branch, etc.)
+
+**Example workflow:**
+```bash
+# You're on feature-branch with 3 new commits
+snap replay main
+
+# Output shows:
+Replay commits from 'feature-branch' onto 'main'
+
+The following 3 commit(s) will be replayed:
+
+● Add user profile page (2 hours ago)
+  abc123f
+│
+● Update navigation menu (3 hours ago)
+  def456a
+│
+● Fix login form validation (4 hours ago)
+  789beef
+
+Proceed with replay? (y/n):
+```
+
 ### `snap merge <branch>`
 Merge branches. Auto-detects conflicts and opens a clean conflict resolver.
 
@@ -226,6 +263,7 @@ Behind the scenes:
 - `snap undo` → `git reset` (soft/hard depending on flags)
 - `snap goto` → `git checkout` with smart date/message parsing
 - `snap branch` → `git branch` + `git checkout -b` with interactive TUI
+- `snap replay` → `git rebase` with visual preview and confirmation
 
 ## Philosophy
 
@@ -249,6 +287,7 @@ Git's complexity comes from its history and Unix philosophy. Snap reimagines ver
 | `git checkout -b branch` | `snap branch new branch` |
 | `git branch -d branch` | `snap branch delete branch` |
 | `git checkout branch` | `snap branch switch branch` |
+| `git rebase main` | `snap replay main` |
 | `git pull && git push` | `snap sync` |
 | `git clone` | `snap fork` |
 | `git log` | `snap stack` |
@@ -282,6 +321,9 @@ snap stack
 
 # Sync your work with remote
 snap sync
+
+# Keep feature branch up to date with main
+snap replay main
 
 # Go back to main and merge
 snap goto main

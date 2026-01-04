@@ -686,3 +686,263 @@ func deleteBranchCmd(branchName string) tea.Cmd {
 		return deleteBranchMsg{err: err}
 	}
 }
+
+// Replay (rebase) TUI model
+type replayState int
+
+const (
+	replayStateChecking replayState = iota
+	replayStateShowingCommits
+	replayStateConfirming
+	replayStateReplaying
+	replayStateConflict
+	replayStateDone
+	replayStateError
+)
+
+type replayModel struct {
+	state         replayState
+	spinner       spinner.Model
+	err           error
+	ontoBranch    string
+	currentBranch string
+	commits       []CommitInfo
+	interactive   bool
+	output        string
+	cursor        int
+}
+
+type getReplayCommitsMsg struct {
+	commits []CommitInfo
+	err     error
+}
+
+type replayCommitsMsg struct {
+	output string
+	err    error
+}
+
+type checkRebaseMsg struct {
+	inProgress bool
+	err        error
+}
+
+func initialReplayModel(ontoBranch string, interactive bool) replayModel {
+	s := spinner.New()
+	s.Spinner = spinner.Dot
+	s.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("#7D56F4"))
+
+	return replayModel{
+		state:       replayStateChecking,
+		spinner:     s,
+		ontoBranch:  ontoBranch,
+		interactive: interactive,
+	}
+}
+
+func (m replayModel) Init() tea.Cmd {
+	return tea.Batch(m.spinner.Tick, checkForRebase)
+}
+
+func (m replayModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		if m.state == replayStateShowingCommits {
+			switch msg.String() {
+			case "ctrl+c", "q", "n", "N":
+				m.state = replayStateDone
+				m.err = fmt.Errorf("replay cancelled")
+				return m, tea.Quit
+			case "y", "Y", "enter":
+				m.state = replayStateReplaying
+				return m, replayCommits(m.ontoBranch)
+			}
+		} else if m.state == replayStateConfirming {
+			switch msg.String() {
+			case "ctrl+c", "q", "n", "N":
+				m.state = replayStateDone
+				m.err = fmt.Errorf("replay cancelled")
+				return m, tea.Quit
+			case "y", "Y":
+				m.state = replayStateReplaying
+				return m, replayCommits(m.ontoBranch)
+			}
+		}
+
+	case spinner.TickMsg:
+		var cmd tea.Cmd
+		m.spinner, cmd = m.spinner.Update(msg)
+		return m, cmd
+
+	case checkRebaseMsg:
+		if msg.err != nil {
+			m.state = replayStateError
+			m.err = msg.err
+			return m, tea.Quit
+		}
+		if msg.inProgress {
+			m.state = replayStateError
+			m.err = fmt.Errorf("rebase already in progress. Use 'git rebase --continue', '--skip', or '--abort'")
+			return m, tea.Quit
+		}
+		// Get current branch
+		currentBranch, err := GetCurrentBranch()
+		if err != nil {
+			m.state = replayStateError
+			m.err = err
+			return m, tea.Quit
+		}
+		m.currentBranch = currentBranch
+
+		// Check if branch is same as onto branch
+		if currentBranch == m.ontoBranch {
+			m.state = replayStateError
+			m.err = fmt.Errorf("already on branch '%s', nothing to replay", m.ontoBranch)
+			return m, tea.Quit
+		}
+
+		return m, getReplayCommitsCmd(m.ontoBranch)
+
+	case getReplayCommitsMsg:
+		if msg.err != nil {
+			m.state = replayStateError
+			m.err = msg.err
+			return m, tea.Quit
+		}
+		m.commits = msg.commits
+
+		if len(msg.commits) == 0 {
+			m.state = replayStateError
+			m.err = fmt.Errorf("no commits to replay (already up to date with '%s')", m.ontoBranch)
+			return m, tea.Quit
+		}
+
+		m.state = replayStateShowingCommits
+		return m, nil
+
+	case replayCommitsMsg:
+		if msg.err != nil {
+			// Check if it's a conflict
+			if strings.Contains(msg.output, "CONFLICT") || strings.Contains(msg.output, "conflict") {
+				m.state = replayStateConflict
+				m.output = msg.output
+				return m, tea.Quit
+			}
+			m.state = replayStateError
+			m.err = msg.err
+			m.output = msg.output
+			return m, tea.Quit
+		}
+		m.output = msg.output
+		m.state = replayStateDone
+		return m, tea.Quit
+	}
+
+	return m, nil
+}
+
+func (m replayModel) View() string {
+	switch m.state {
+	case replayStateChecking:
+		return fmt.Sprintf("%s Checking repository status...", m.spinner.View())
+
+	case replayStateShowingCommits:
+		var s strings.Builder
+
+		titleStyle := lipgloss.NewStyle().
+			Bold(true).
+			Foreground(lipgloss.Color("#7D56F4"))
+
+		s.WriteString(titleStyle.Render(fmt.Sprintf("Replay commits from '%s' onto '%s'", m.currentBranch, m.ontoBranch)))
+		s.WriteString("\n\n")
+
+		infoStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#888888"))
+		s.WriteString(infoStyle.Render(fmt.Sprintf("The following %d commit(s) will be replayed:", len(m.commits))))
+		s.WriteString("\n\n")
+
+		commitStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#7D56F4")).Bold(true)
+		hashStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#888888"))
+		timeStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#888888"))
+
+		// Show commits in reverse order (oldest first, as they'll be applied)
+		for i := len(m.commits) - 1; i >= 0; i-- {
+			commit := m.commits[i]
+			s.WriteString(fmt.Sprintf("%s %s %s\n",
+				commitStyle.Render("●"),
+				commit.Message,
+				timeStyle.Render(fmt.Sprintf("(%s)", commit.RelativeTime)),
+			))
+			s.WriteString(fmt.Sprintf("  %s\n", hashStyle.Render(commit.ShortHash)))
+			if i > 0 {
+				s.WriteString(commitStyle.Render("│") + "\n")
+			}
+		}
+
+		s.WriteString("\n")
+		s.WriteString(highlightStyle.Render("Proceed with replay? (y/n): "))
+
+		return s.String()
+
+	case replayStateConfirming:
+		return fmt.Sprintf("\n%s\n%s",
+			fmt.Sprintf("Replay %d commits from '%s' onto '%s'?", len(m.commits), m.currentBranch, m.ontoBranch),
+			highlightStyle.Render("(y)es or (n)o: "),
+		)
+
+	case replayStateReplaying:
+		return fmt.Sprintf("%s Replaying commits onto '%s'...", m.spinner.View(), m.ontoBranch)
+
+	case replayStateConflict:
+		var s strings.Builder
+		s.WriteString(errorStyle.Render("✗ Conflicts detected during replay") + "\n\n")
+
+		infoStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#888888"))
+		s.WriteString(infoStyle.Render("Please resolve conflicts and then:") + "\n")
+		s.WriteString("  • Fix conflicts in your files\n")
+		s.WriteString("  • Stage the resolved files: " + highlightStyle.Render("git add <files>") + "\n")
+		s.WriteString("  • Continue: " + highlightStyle.Render("git rebase --continue") + "\n")
+		s.WriteString("  • Or abort: " + highlightStyle.Render("git rebase --abort") + "\n\n")
+
+		if m.output != "" {
+			s.WriteString(infoStyle.Render("Git output:") + "\n")
+			s.WriteString(m.output + "\n")
+		}
+
+		return s.String()
+
+	case replayStateDone:
+		if m.err != nil {
+			return errorStyle.Render(fmt.Sprintf("✗ %s", m.err))
+		}
+		return successStyle.Render(fmt.Sprintf("✓ Successfully replayed %d commit(s) onto '%s'", len(m.commits), m.ontoBranch))
+
+	case replayStateError:
+		errMsg := errorStyle.Render(fmt.Sprintf("✗ Error: %s", m.err))
+		if m.output != "" {
+			infoStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#888888"))
+			errMsg += "\n\n" + infoStyle.Render("Git output:") + "\n" + m.output
+		}
+		return errMsg
+	}
+
+	return ""
+}
+
+func checkForRebase() tea.Msg {
+	inProgress, err := CheckRebaseInProgress()
+	return checkRebaseMsg{inProgress: inProgress, err: err}
+}
+
+func getReplayCommitsCmd(ontoBranch string) tea.Cmd {
+	return func() tea.Msg {
+		commits, err := GetRebaseCommits(ontoBranch)
+		return getReplayCommitsMsg{commits: commits, err: err}
+	}
+}
+
+func replayCommits(ontoBranch string) tea.Cmd {
+	return func() tea.Msg {
+		output, err := ReplayCommits(ontoBranch)
+		return replayCommitsMsg{output: output, err: err}
+	}
+}
