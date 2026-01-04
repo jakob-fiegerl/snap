@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
@@ -23,6 +24,7 @@ const (
 
 type model struct {
 	state         state
+	spinner       spinner.Model
 	err           error
 	diff          string
 	commitMessage string
@@ -83,13 +85,22 @@ var (
 )
 
 func initialModel(seed int) model {
+	s := spinner.New()
+	s.Spinner = spinner.Dot
+	s.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("#7D56F4"))
+
 	return model{
-		state: stateChecking,
-		seed:  seed,
+		state:   stateChecking,
+		seed:    seed,
+		spinner: s,
 	}
 }
 
 func initialModelWithMessage(seed int, customMessage string) model {
+	s := spinner.New()
+	s.Spinner = spinner.Dot
+	s.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("#7D56F4"))
+
 	if customMessage != "" {
 		// Skip AI generation, go straight to staging
 		return model{
@@ -97,6 +108,7 @@ func initialModelWithMessage(seed int, customMessage string) model {
 			seed:          seed,
 			commitMessage: customMessage,
 			useCustomMsg:  true,
+			spinner:       s,
 		}
 	}
 	return initialModel(seed)
@@ -104,9 +116,9 @@ func initialModelWithMessage(seed int, customMessage string) model {
 
 func (m model) Init() tea.Cmd {
 	if m.useCustomMsg {
-		return stageChanges
+		return tea.Batch(m.spinner.Tick, stageChanges)
 	}
-	return checkOllama
+	return tea.Batch(m.spinner.Tick, checkOllama)
 }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -129,6 +141,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, tea.Quit
 			}
 		}
+
+	case spinner.TickMsg:
+		var cmd tea.Cmd
+		m.spinner, cmd = m.spinner.Update(msg)
+		return m, cmd
 
 	case checkOllamaMsg:
 		if !msg.running {
@@ -197,89 +214,44 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m model) View() string {
-	var s strings.Builder
-
-	s.WriteString(titleStyle.Render("📸 Snap - AI-Powered Git Snapshot Tool"))
-	s.WriteString("\n\n")
-
 	switch m.state {
 	case stateChecking:
-		s.WriteString("⏳ Checking Ollama connection...")
-		s.WriteString("\n")
+		if m.useCustomMsg {
+			return fmt.Sprintf("%s Staging changes...", m.spinner.View())
+		}
+		return fmt.Sprintf("%s Checking Ollama...", m.spinner.View())
 
 	case stateStaging:
-		if !m.useCustomMsg {
-			s.WriteString(successStyle.Render("✓ Ollama is running"))
-			s.WriteString("\n")
-		}
-		s.WriteString("⏳ Staging changes...")
-		s.WriteString("\n")
+		return fmt.Sprintf("%s Staging changes...", m.spinner.View())
 
 	case stateGettingDiff:
-		if !m.useCustomMsg {
-			s.WriteString(successStyle.Render("✓ Ollama is running"))
-			s.WriteString("\n")
-		}
-		s.WriteString(successStyle.Render("✓ Staged all changes"))
-		s.WriteString("\n")
-		s.WriteString("⏳ Getting git diff...")
-		s.WriteString("\n")
+		return fmt.Sprintf("%s Getting changes...", m.spinner.View())
 
 	case stateGenerating:
-		s.WriteString(successStyle.Render("✓ Ollama is running"))
-		s.WriteString("\n")
-		s.WriteString(successStyle.Render("✓ Staged all changes"))
-		s.WriteString("\n")
-		s.WriteString(successStyle.Render("✓ Got git diff"))
-		s.WriteString("\n")
-		s.WriteString("⏳ Generating commit message with Phi-4...")
-		s.WriteString("\n")
+		return fmt.Sprintf("%s Generating commit message...", m.spinner.View())
 
 	case stateConfirming:
-		if m.useCustomMsg {
-			s.WriteString(successStyle.Render("✓ Staged all changes"))
-			s.WriteString("\n")
-			s.WriteString(successStyle.Render("✓ Got git diff"))
-			s.WriteString("\n\n")
-		} else {
-			s.WriteString(successStyle.Render("✓ Ollama is running"))
-			s.WriteString("\n")
-			s.WriteString(successStyle.Render("✓ Staged all changes"))
-			s.WriteString("\n")
-			s.WriteString(successStyle.Render("✓ Got git diff"))
-			s.WriteString("\n")
-			s.WriteString(successStyle.Render("✓ Generated commit message"))
-			s.WriteString("\n\n")
-		}
-
+		var s strings.Builder
+		s.WriteString("\n")
 		s.WriteString(boxStyle.Width(60).Render(m.commitMessage))
 		s.WriteString("\n\n")
 		s.WriteString(highlightStyle.Render("Commit with this message? (y/n): "))
+		return s.String()
 
 	case stateCommitting:
-		s.WriteString(successStyle.Render("✓ Committing changes..."))
-		s.WriteString("\n")
+		return fmt.Sprintf("%s Committing...", m.spinner.View())
 
 	case stateDone:
 		if m.err != nil {
-			s.WriteString(errorStyle.Render(fmt.Sprintf("✗ %s", m.err)))
-			s.WriteString("\n")
-		} else {
-			s.WriteString(successStyle.Render("✓ Changes committed successfully!"))
-			s.WriteString("\n")
+			return errorStyle.Render(fmt.Sprintf("✗ %s", m.err))
 		}
+		return successStyle.Render("✓ Changes committed successfully!")
 
 	case stateError:
-		s.WriteString(errorStyle.Render(fmt.Sprintf("✗ Error: %s", m.err)))
-		s.WriteString("\n")
+		return errorStyle.Render(fmt.Sprintf("✗ Error: %s", m.err))
 	}
 
-	if m.state != stateDone && m.state != stateError {
-		s.WriteString("\n")
-		s.WriteString(infoStyle.Render("Press q or ctrl+c to quit"))
-	}
-
-	return s.String()
+	return ""
 }
 
 func checkOllama() tea.Msg {
