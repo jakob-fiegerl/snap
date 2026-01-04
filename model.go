@@ -204,54 +204,74 @@ func (m model) View() string {
 
 	switch m.state {
 	case stateChecking:
-		s.WriteString("⏳ Checking Ollama connection...\n")
+		s.WriteString("⏳ Checking Ollama connection...")
+		s.WriteString("\n")
 
 	case stateStaging:
 		if !m.useCustomMsg {
-			s.WriteString(successStyle.Render("✓ Ollama is running\n"))
+			s.WriteString(successStyle.Render("✓ Ollama is running"))
+			s.WriteString("\n")
 		}
-		s.WriteString("⏳ Staging changes...\n")
+		s.WriteString("⏳ Staging changes...")
+		s.WriteString("\n")
 
 	case stateGettingDiff:
 		if !m.useCustomMsg {
-			s.WriteString(successStyle.Render("✓ Ollama is running\n"))
+			s.WriteString(successStyle.Render("✓ Ollama is running"))
+			s.WriteString("\n")
 		}
-		s.WriteString(successStyle.Render("✓ Staged all changes\n"))
-		s.WriteString("⏳ Getting git diff...\n")
+		s.WriteString(successStyle.Render("✓ Staged all changes"))
+		s.WriteString("\n")
+		s.WriteString("⏳ Getting git diff...")
+		s.WriteString("\n")
 
 	case stateGenerating:
-		s.WriteString(successStyle.Render("✓ Ollama is running\n"))
-		s.WriteString(successStyle.Render("✓ Staged all changes\n"))
-		s.WriteString(successStyle.Render("✓ Got git diff\n"))
-		s.WriteString("⏳ Generating commit message with Phi-4...\n")
+		s.WriteString(successStyle.Render("✓ Ollama is running"))
+		s.WriteString("\n")
+		s.WriteString(successStyle.Render("✓ Staged all changes"))
+		s.WriteString("\n")
+		s.WriteString(successStyle.Render("✓ Got git diff"))
+		s.WriteString("\n")
+		s.WriteString("⏳ Generating commit message with Phi-4...")
+		s.WriteString("\n")
 
 	case stateConfirming:
 		if m.useCustomMsg {
-			s.WriteString(successStyle.Render("✓ Staged all changes\n"))
-			s.WriteString(successStyle.Render("✓ Got git diff\n\n"))
+			s.WriteString(successStyle.Render("✓ Staged all changes"))
+			s.WriteString("\n")
+			s.WriteString(successStyle.Render("✓ Got git diff"))
+			s.WriteString("\n\n")
 		} else {
-			s.WriteString(successStyle.Render("✓ Ollama is running\n"))
-			s.WriteString(successStyle.Render("✓ Staged all changes\n"))
-			s.WriteString(successStyle.Render("✓ Got git diff\n"))
-			s.WriteString(successStyle.Render("✓ Generated commit message\n\n"))
+			s.WriteString(successStyle.Render("✓ Ollama is running"))
+			s.WriteString("\n")
+			s.WriteString(successStyle.Render("✓ Staged all changes"))
+			s.WriteString("\n")
+			s.WriteString(successStyle.Render("✓ Got git diff"))
+			s.WriteString("\n")
+			s.WriteString(successStyle.Render("✓ Generated commit message"))
+			s.WriteString("\n\n")
 		}
 
-		s.WriteString(boxStyle.Render(m.commitMessage))
+		s.WriteString(boxStyle.Width(60).Render(m.commitMessage))
 		s.WriteString("\n\n")
 		s.WriteString(highlightStyle.Render("Commit with this message? (y/n): "))
 
 	case stateCommitting:
-		s.WriteString(successStyle.Render("✓ Committing changes...\n"))
+		s.WriteString(successStyle.Render("✓ Committing changes..."))
+		s.WriteString("\n")
 
 	case stateDone:
 		if m.err != nil {
-			s.WriteString(errorStyle.Render(fmt.Sprintf("✗ %s\n", m.err)))
+			s.WriteString(errorStyle.Render(fmt.Sprintf("✗ %s", m.err)))
+			s.WriteString("\n")
 		} else {
-			s.WriteString(successStyle.Render("✓ Changes committed successfully!\n"))
+			s.WriteString(successStyle.Render("✓ Changes committed successfully!"))
+			s.WriteString("\n")
 		}
 
 	case stateError:
-		s.WriteString(errorStyle.Render(fmt.Sprintf("✗ Error: %s\n", m.err)))
+		s.WriteString(errorStyle.Render(fmt.Sprintf("✗ Error: %s", m.err)))
+		s.WriteString("\n")
 	}
 
 	if m.state != stateDone && m.state != stateError {
