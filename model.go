@@ -231,12 +231,14 @@ func (m model) View() string {
 		return fmt.Sprintf("%s Generating commit message...", m.spinner.View())
 
 	case stateConfirming:
-		var s strings.Builder
-		s.WriteString("\n")
-		s.WriteString(boxStyle.Width(60).Render(m.commitMessage))
-		s.WriteString("\n\n")
-		s.WriteString(highlightStyle.Render("Commit with this message? (y/n): "))
-		return s.String()
+		// Compact inline confirmation
+		msgStyle := lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#7D56F4")).
+			Bold(true)
+		return fmt.Sprintf("\n%s\n%s ",
+			msgStyle.Render(m.commitMessage),
+			highlightStyle.Render("Commit? (y/n):"),
+		)
 
 	case stateCommitting:
 		return fmt.Sprintf("%s Committing...", m.spinner.View())

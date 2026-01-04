@@ -177,8 +177,8 @@ func main() {
 			}
 		}
 
-		// Run the TUI
-		p := tea.NewProgram(initialModelWithMessage(seed, customMessage), tea.WithAltScreen())
+		// Run the TUI (inline, no alt screen)
+		p := tea.NewProgram(initialModelWithMessage(seed, customMessage))
 		if _, err := p.Run(); err != nil {
 			fmt.Printf("Error: %v\n", err)
 			os.Exit(1)
