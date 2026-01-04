@@ -189,3 +189,17 @@ func CheckForUncommittedChanges() (bool, error) {
 	}
 	return len(strings.TrimSpace(status)) > 0, nil
 }
+
+// InitRepository initializes a new git repository
+func InitRepository() (string, error) {
+	cmd := exec.Command("git", "init")
+	output, err := cmd.CombinedOutput()
+	return string(output), err
+}
+
+// IsGitRepository checks if the current directory is a git repository
+func IsGitRepository() bool {
+	cmd := exec.Command("git", "rev-parse", "--git-dir")
+	err := cmd.Run()
+	return err == nil
+}

@@ -19,6 +19,7 @@ USAGE:
     snap save [MESSAGE] [OPTIONS]
 
 COMMANDS:
+    init                Initialize a new repository
     save [MESSAGE]      Save changes with AI-generated or custom commit message
     changes             Show uncommitted changes
     sync [--from]       Smart push/pull - sync with remote repository
@@ -31,6 +32,7 @@ OPTIONS:
 
 EXAMPLES:
     snap                       Show this help message
+    snap init                  Start a new repository
     snap changes               Show what files have changed
     snap save                  Save changes with AI-generated message
     snap save "fix: bug"       Save changes with custom message
@@ -86,6 +88,30 @@ func main() {
 
 	case "version", "--version", "-v":
 		printVersion()
+		os.Exit(0)
+
+	case "init":
+		// Check if already a git repository
+		if IsGitRepository() {
+			fmt.Println("Error: already a git repository")
+			fmt.Println("Use 'snap changes' to see what's changed")
+			os.Exit(1)
+		}
+
+		// Initialize repository
+		fmt.Println("📸 Initializing new repository...")
+		output, err := InitRepository()
+		if err != nil {
+			fmt.Printf("Error: failed to initialize repository: %v\n", err)
+			fmt.Println(output)
+			os.Exit(1)
+		}
+
+		fmt.Println("✓ Repository initialized!")
+		fmt.Println("\nNext steps:")
+		fmt.Println("  1. Create some files")
+		fmt.Println("  2. Run 'snap changes' to see what's new")
+		fmt.Println("  3. Run 'snap save \"Initial commit\"' to save your work")
 		os.Exit(0)
 
 	case "changes":

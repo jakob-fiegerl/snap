@@ -20,6 +20,7 @@ Snap is currently under active development. Here's what works today:
 
 | Command | Status | Description |
 |---------|--------|-------------|
+| `snap init` | ✅ Working | Initialize a new repository |
 | `snap changes` | ✅ Working | Show uncommitted changes with colors |
 | `snap save` | ✅ Working | Commit changes (with AI or custom message) |
 | `snap sync` | ✅ Working | Smart push/pull with conflict detection |
@@ -33,6 +34,18 @@ Snap is currently under active development. Here's what works today:
 | `snap ignore` | 🚧 Planned | Add to .gitignore |
 
 ## Core Commands
+
+### `snap init`
+Initialize a new repository in the current directory.
+
+```bash
+snap init
+```
+
+**What it does:**
+- Creates a new Git repository
+- Checks if already initialized (prevents accidents)
+- Shows helpful next steps
 
 ### `snap changes`
 See what files have changed. Shows modified, added, and untracked files.
@@ -132,14 +145,21 @@ snap ignore node_modules
 
 ### Prerequisites
 
-1. **Node.js** (v18 or higher)
+1. **Go** (1.24.1 or higher)
 2. **Git** (Snap is built on top of Git)
-3. **Ollama** with Phi-4 (for AI-powered commit messages)
+3. **Ollama** with Phi-4 (optional - for AI-powered commit messages)
 
 ### Installation
 
 ```bash
-npm install -g snap-vcs
+# Clone and install
+git clone https://github.com/yourusername/snap.git
+cd snap
+./install.sh
+
+# Or build manually
+go build -o snap
+sudo mv snap /usr/local/bin/
 ```
 
 ### Setup Ollama (Optional - for AI commit messages)
@@ -157,6 +177,7 @@ ollama pull phi4
 Snap is a wrapper around Git that translates intuitive commands into Git operations. You get all the power of Git with none of the confusion.
 
 Behind the scenes:
+- `snap init` → `git init`
 - `snap changes` → `git status --short`
 - `snap save` → `git add -A && git commit`
 - `snap undo` → `git reset` (soft/hard depending on flags)
@@ -177,6 +198,7 @@ Git's complexity comes from its history and Unix philosophy. Snap reimagines ver
 
 | Git Command | Snap Equivalent |
 |-------------|-----------------|
+| `git init` | `snap init` |
 | `git status` | `snap changes` |
 | `git add . && git commit -m "msg"` | `snap save "msg"` |
 | `git commit --amend` | `snap undo` |
