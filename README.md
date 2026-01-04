@@ -58,9 +58,14 @@ snap changes
 Commit your changes. No staging area confusion, just save what you've changed.
 
 ```bash
-snap save "Add user authentication"
-snap save  # Interactive prompt if no message
+snap save "Add user authentication"  # Use custom message
+snap save                             # AI generates message for you
 ```
+
+**Interactive options when AI generates:**
+- `y` - Accept the suggested message
+- `n` - Decline and cancel commit
+- `e` - Edit the message before committing
 
 ### `snap undo`
 Undo your last save. Like `git commit --amend` but clearer.

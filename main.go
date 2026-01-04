@@ -53,8 +53,12 @@ EXAMPLES:
 DESCRIPTION:
     Snap uses Ollama's Phi-4 model to automatically generate meaningful
     conventional commit messages based on your git diff. You can also provide
-    your own commit message. It provides an interactive TUI for reviewing
-    and confirming commits.
+    your own commit message. 
+    
+    When AI generates a message, you can:
+        y - Accept the message
+        n - Decline and cancel
+        e - Edit the message before committing
 
     Before using AI mode, make sure Ollama is running:
         ollama serve

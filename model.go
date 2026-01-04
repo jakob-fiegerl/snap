@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/bubbles/spinner"
+	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
@@ -17,6 +18,7 @@ const (
 	stateGettingDiff
 	stateGenerating
 	stateConfirming
+	stateEditing
 	stateCommitting
 	stateDone
 	stateError
@@ -25,9 +27,11 @@ const (
 type model struct {
 	state         state
 	spinner       spinner.Model
+	textInput     textinput.Model
 	err           error
 	diff          string
 	commitMessage string
+	originalMsg   string
 	cursor        int
 	seed          int
 	ollamaRunning bool
@@ -89,10 +93,17 @@ func initialModel(seed int) model {
 	s.Spinner = spinner.Dot
 	s.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("#7D56F4"))
 
+	ti := textinput.New()
+	ti.Placeholder = "Enter commit message..."
+	ti.Focus()
+	ti.CharLimit = 200
+	ti.Width = 60
+
 	return model{
-		state:   stateChecking,
-		seed:    seed,
-		spinner: s,
+		state:     stateChecking,
+		seed:      seed,
+		spinner:   s,
+		textInput: ti,
 	}
 }
 
@@ -100,6 +111,12 @@ func initialModelWithMessage(seed int, customMessage string) model {
 	s := spinner.New()
 	s.Spinner = spinner.Dot
 	s.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("#7D56F4"))
+
+	ti := textinput.New()
+	ti.Placeholder = "Enter commit message..."
+	ti.Focus()
+	ti.CharLimit = 200
+	ti.Width = 60
 
 	if customMessage != "" {
 		// Skip AI generation, go straight to staging
@@ -109,6 +126,7 @@ func initialModelWithMessage(seed int, customMessage string) model {
 			commitMessage: customMessage,
 			useCustomMsg:  true,
 			spinner:       s,
+			textInput:     ti,
 		}
 	}
 	return initialModel(seed)
@@ -124,8 +142,40 @@ func (m model) Init() tea.Cmd {
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
+		// Handle text input in edit mode
+		if m.state == stateEditing {
+			switch msg.String() {
+			case "ctrl+c", "q":
+				// Cancel editing, go back to confirming with original message
+				m.commitMessage = m.originalMsg
+				m.state = stateConfirming
+				return m, nil
+			case "enter":
+				// Accept edited message
+				m.commitMessage = m.textInput.Value()
+				if strings.TrimSpace(m.commitMessage) == "" {
+					m.state = stateError
+					m.err = fmt.Errorf("commit message cannot be empty")
+					return m, tea.Quit
+				}
+				m.state = stateCommitting
+				return m, commitChanges(m.commitMessage)
+			default:
+				var cmd tea.Cmd
+				m.textInput, cmd = m.textInput.Update(msg)
+				return m, cmd
+			}
+		}
+
+		// Handle confirmation state
 		switch msg.String() {
 		case "ctrl+c", "q":
+			if m.state != stateConfirming {
+				return m, tea.Quit
+			}
+			// In confirming state, treat as decline
+			m.state = stateDone
+			m.err = fmt.Errorf("commit cancelled")
 			return m, tea.Quit
 
 		case "y", "Y":
@@ -137,8 +187,18 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "n", "N":
 			if m.state == stateConfirming {
 				m.state = stateDone
-				m.err = fmt.Errorf("commit cancelled by user")
+				m.err = fmt.Errorf("commit cancelled")
 				return m, tea.Quit
+			}
+
+		case "e", "E":
+			if m.state == stateConfirming {
+				// Enter edit mode
+				m.originalMsg = m.commitMessage
+				m.textInput.SetValue(m.commitMessage)
+				m.textInput.Focus()
+				m.state = stateEditing
+				return m, textinput.Blink
 			}
 		}
 
@@ -235,9 +295,18 @@ func (m model) View() string {
 		msgStyle := lipgloss.NewStyle().
 			Foreground(lipgloss.Color("#7D56F4")).
 			Bold(true)
-		return fmt.Sprintf("\n%s\n%s ",
+		helpStyle := lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#888888"))
+		return fmt.Sprintf("\n%s\n%s %s",
 			msgStyle.Render(m.commitMessage),
-			highlightStyle.Render("Commit? (y/n):"),
+			highlightStyle.Render("(y)es, (n)o, (e)dit:"),
+			helpStyle.Render(""),
+		)
+
+	case stateEditing:
+		return fmt.Sprintf("\n%s\n%s",
+			lipgloss.NewStyle().Foreground(lipgloss.Color("#888888")).Render("Edit commit message (Enter to save, Ctrl+C to cancel):"),
+			m.textInput.View(),
 		)
 
 	case stateCommitting:
