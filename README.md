@@ -62,9 +62,16 @@ snap branch -d old-name  # Delete a branch
 Smart push/pull combined. Figures out what you need automatically.
 
 ```bash
-snap sync              # Auto push/pull
-snap sync --from origin  # Explicit pull
+snap sync        # Pull then push - sync everything
+snap sync --from # Only pull changes from remote
 ```
+
+**What it does:**
+- Checks for uncommitted changes (prompts you to save first)
+- Pulls latest changes from remote
+- Detects and reports merge conflicts
+- Pushes your commits to remote
+- Automatically sets upstream branch on first push
 
 ### `snap fork <url>`
 Clone a repository (because that's what it actually is).
@@ -184,6 +191,9 @@ snap branch user-login
 # Save progress
 snap save "Add login form"
 snap save "Add validation"
+
+# Sync your work with remote
+snap sync
 
 # Go back to main and merge
 snap goto main

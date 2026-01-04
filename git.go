@@ -132,3 +132,60 @@ func GetColoredStatus() (string, error) {
 
 	return result.String(), nil
 }
+
+// CheckRemoteExists checks if a remote repository is configured
+func CheckRemoteExists() (bool, error) {
+	cmd := exec.Command("git", "remote")
+	output, err := cmd.Output()
+	if err != nil {
+		return false, err
+	}
+	return len(strings.TrimSpace(string(output))) > 0, nil
+}
+
+// GetCurrentBranch returns the name of the current branch
+func GetCurrentBranch() (string, error) {
+	cmd := exec.Command("git", "branch", "--show-current")
+	output, err := cmd.Output()
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(output)), nil
+}
+
+// HasUpstreamBranch checks if the current branch has an upstream branch
+func HasUpstreamBranch() (bool, error) {
+	cmd := exec.Command("git", "rev-parse", "--abbrev-ref", "@{upstream}")
+	err := cmd.Run()
+	return err == nil, nil
+}
+
+// PullChanges pulls changes from the remote repository
+func PullChanges() (string, error) {
+	cmd := exec.Command("git", "pull")
+	output, err := cmd.CombinedOutput()
+	return string(output), err
+}
+
+// PushChanges pushes changes to the remote repository
+func PushChanges() (string, error) {
+	cmd := exec.Command("git", "push")
+	output, err := cmd.CombinedOutput()
+	return string(output), err
+}
+
+// PushWithUpstream pushes changes and sets upstream tracking
+func PushWithUpstream(branch string) (string, error) {
+	cmd := exec.Command("git", "push", "-u", "origin", branch)
+	output, err := cmd.CombinedOutput()
+	return string(output), err
+}
+
+// CheckForUncommittedChanges checks if there are uncommitted changes
+func CheckForUncommittedChanges() (bool, error) {
+	status, err := GetStatus()
+	if err != nil {
+		return false, err
+	}
+	return len(strings.TrimSpace(status)) > 0, nil
+}
