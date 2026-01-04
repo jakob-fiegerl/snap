@@ -356,6 +356,39 @@ func TestCheckRebaseInProgress(t *testing.T) {
 	}
 }
 
+func TestGetBranchesWithShortNames(t *testing.T) {
+	_, cleanup := setupTestRepo(t)
+	defer cleanup()
+
+	// Create branches with various name lengths to test parsing
+	testBranches := []string{"a", "ab", "abc", "feature", "very-long-branch-name"}
+
+	for _, branchName := range testBranches {
+		err := CreateBranch(branchName)
+		if err != nil {
+			t.Fatalf("Failed to create branch '%s': %v", branchName, err)
+		}
+	}
+
+	// Get all branches
+	branches, err := GetBranches()
+	if err != nil {
+		t.Fatalf("GetBranches failed: %v", err)
+	}
+
+	// Verify all test branches are present with correct names
+	foundBranches := make(map[string]bool)
+	for _, branch := range branches {
+		foundBranches[branch.Name] = true
+	}
+
+	for _, expected := range testBranches {
+		if !foundBranches[expected] {
+			t.Errorf("Branch '%s' not found in results. Found branches: %v", expected, foundBranches)
+		}
+	}
+}
+
 func TestGetMergeBase(t *testing.T) {
 	_, cleanup := setupTestRepo(t)
 	defer cleanup()

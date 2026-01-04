@@ -287,7 +287,8 @@ func GetBranches() ([]BranchInfo, error) {
 		return []BranchInfo{}, nil
 	}
 
-	lines := strings.Split(strings.TrimSpace(string(output)), "\n")
+	// Split by newline - don't use TrimSpace as it removes leading spaces from first line
+	lines := strings.Split(strings.TrimRight(string(output), "\n"), "\n")
 	branches := make([]BranchInfo, 0, len(lines))
 
 	for _, line := range lines {
@@ -297,8 +298,9 @@ func GetBranches() ([]BranchInfo, error) {
 
 		isCurrent := line[0] == '*'
 
-		// Remove the '* ' or '  ' prefix
-		line = strings.TrimSpace(line[2:])
+		// Remove the '* ' or leading spaces
+		// Use TrimLeft to handle variable spacing
+		line = strings.TrimLeft(line, "* ")
 
 		// Parse: branchname hash [upstream] commit message
 		parts := strings.Fields(line)

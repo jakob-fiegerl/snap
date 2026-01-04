@@ -255,6 +255,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.err = msg.err
 			return m, tea.Quit
 		}
+		// Validate message is not empty
+		if strings.TrimSpace(msg.message) == "" {
+			m.state = stateError
+			m.err = fmt.Errorf("AI generated an empty commit message. Please try again or use a custom message")
+			return m, tea.Quit
+		}
 		m.commitMessage = msg.message
 		m.generatedMsg = true
 		m.state = stateConfirming
