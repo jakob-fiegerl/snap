@@ -387,6 +387,34 @@ func ForceDeleteBranch(branchName string) error {
 	return nil
 }
 
+// CheckoutCommit checks out a specific commit (detached HEAD state)
+func CheckoutCommit(commitHash string) error {
+	cmd := exec.Command("git", "checkout", commitHash)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("%w: %s", err, string(output))
+	}
+	return nil
+}
+
+// IsDetachedHead checks if HEAD is in detached state
+func IsDetachedHead() (bool, error) {
+	cmd := exec.Command("git", "symbolic-ref", "-q", "HEAD")
+	err := cmd.Run()
+	// If error, we're in detached HEAD state
+	return err != nil, nil
+}
+
+// GetCommitDetails returns detailed information about a commit
+func GetCommitDetails(commitHash string) (string, error) {
+	cmd := exec.Command("git", "show", "--stat", "--pretty=fuller", commitHash)
+	output, err := cmd.Output()
+	if err != nil {
+		return "", err
+	}
+	return string(output), nil
+}
+
 // ReplayCommits rebases current branch onto the specified branch
 func ReplayCommits(ontoBranch string) (string, error) {
 	cmd := exec.Command("git", "rebase", ontoBranch)

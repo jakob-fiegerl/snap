@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -426,5 +427,115 @@ func TestGetMergeBase(t *testing.T) {
 	// Verify it's a valid commit hash (40 characters)
 	if len(mergeBase) != 40 {
 		t.Errorf("Expected merge base to be 40 characters, got %d", len(mergeBase))
+	}
+}
+
+func TestCheckoutCommit(t *testing.T) {
+	_, cleanup := setupTestRepo(t)
+	defer cleanup()
+
+	// Get the initial commit hash
+	commits, err := GetCommitHistory(1, false, "", "")
+	if err != nil {
+		t.Fatalf("GetCommitHistory failed: %v", err)
+	}
+
+	if len(commits) == 0 {
+		t.Fatal("Expected at least one commit")
+	}
+
+	initialCommit := commits[0].Hash
+
+	// Create a new commit
+	testFile := filepath.Join(".", "new.txt")
+	if err := os.WriteFile(testFile, []byte("new content"), 0644); err != nil {
+		t.Fatalf("Failed to create test file: %v", err)
+	}
+	exec.Command("git", "add", ".").Run()
+	exec.Command("git", "commit", "-m", "New commit").Run()
+
+	// Checkout the initial commit
+	err = CheckoutCommit(initialCommit)
+	if err != nil {
+		t.Fatalf("CheckoutCommit failed: %v", err)
+	}
+
+	// Verify we're in detached HEAD state
+	isDetached, err := IsDetachedHead()
+	if err != nil {
+		t.Fatalf("IsDetachedHead failed: %v", err)
+	}
+
+	if !isDetached {
+		t.Error("Expected to be in detached HEAD state after checking out a commit")
+	}
+}
+
+func TestIsDetachedHead(t *testing.T) {
+	_, cleanup := setupTestRepo(t)
+	defer cleanup()
+
+	// Initially, should not be detached
+	isDetached, err := IsDetachedHead()
+	if err != nil {
+		t.Fatalf("IsDetachedHead failed: %v", err)
+	}
+
+	if isDetached {
+		t.Error("Expected not to be in detached HEAD state initially")
+	}
+
+	// Get a commit to checkout
+	commits, err := GetCommitHistory(1, false, "", "")
+	if err != nil {
+		t.Fatalf("GetCommitHistory failed: %v", err)
+	}
+
+	if len(commits) > 0 {
+		// Checkout the commit
+		err = CheckoutCommit(commits[0].Hash)
+		if err != nil {
+			t.Fatalf("CheckoutCommit failed: %v", err)
+		}
+
+		// Now should be detached
+		isDetached, err = IsDetachedHead()
+		if err != nil {
+			t.Fatalf("IsDetachedHead failed: %v", err)
+		}
+
+		if !isDetached {
+			t.Error("Expected to be in detached HEAD state after checking out a commit")
+		}
+	}
+}
+
+func TestGetCommitDetails(t *testing.T) {
+	_, cleanup := setupTestRepo(t)
+	defer cleanup()
+
+	// Get a commit
+	commits, err := GetCommitHistory(1, false, "", "")
+	if err != nil {
+		t.Fatalf("GetCommitHistory failed: %v", err)
+	}
+
+	if len(commits) == 0 {
+		t.Fatal("Expected at least one commit")
+	}
+
+	// Get details
+	details, err := GetCommitDetails(commits[0].Hash)
+	if err != nil {
+		t.Fatalf("GetCommitDetails failed: %v", err)
+	}
+
+	if details == "" {
+		t.Error("Expected non-empty commit details")
+	}
+
+	// Should contain the commit message
+	if !strings.Contains(details, commits[0].Message) {
+		t.Errorf("Expected details to contain commit message '%s', got: %s", commits[0].Message, details)
 	}
 }

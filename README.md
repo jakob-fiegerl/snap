@@ -132,25 +132,39 @@ snap sync --from # Only pull changes from remote
 - Automatically sets upstream branch on first push
 
 ### `snap stack`
-Visual commit history. Shows your saves as a clean timeline.
+Interactive commit history viewer. Navigate, filter, and checkout commits with ease.
 
 ```bash
-snap stack           # Show recent commits
+snap stack           # Interactive commit browser
 snap stack --all     # Include all branches
 snap stack --mine    # Only your commits
+snap stack --plain   # Non-interactive output (for scripts/piping)
 snap stack README.md # History for specific file
 ```
 
-**Example output:**
+**Interactive features:**
+- Navigate with arrow keys or `j`/`k`
+- Press `/` to filter commits by message, hash, or author
+- Press `Enter` to checkout a specific commit
+- Press `g`/`G` to jump to top/bottom
+- Press `c` to clear active filter
+- Press `?` to toggle help
+
+**Example view:**
 ```
-● 2 minutes ago - Fixed the login bug
-  abc123f
-│
-● 2 hours ago - Added user authentication  
-  def456a
-│
-● yesterday - Initial project setup
-  789beef
+Commit History
+
+→ ● 2 minutes ago Fixed the login bug
+    abc123f by John Doe
+  │
+  ● 2 hours ago Added user authentication  
+    def456a by Jane Smith
+  │
+  ● yesterday Initial project setup
+    789beef by John Doe
+
+↑/k: up  ↓/j: down  g: top  G: bottom  /: filter  c: clear filter
+Enter: checkout  ?: toggle help  q: quit
 ```
 
 ### `snap fork <url>`

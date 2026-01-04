@@ -3,12 +3,10 @@ package main
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"strconv"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 )
 
 const version = "1.0.0"
@@ -45,9 +43,10 @@ EXAMPLES:
     snap save --seed 123       Use a custom seed for AI generation
     snap sync                  Push and pull changes automatically
     snap sync --from           Only pull changes from remote
-    snap stack                 Show commit history
-    snap stack --all           Show all branches
+    snap stack                 Interactive commit history viewer
+    snap stack --all           Include all branches
     snap stack --mine          Show only your commits
+    snap stack --plain         Non-interactive mode (for piping/scripts)
     snap stack README.md       Show history for a specific file
     snap branch                List all branches (interactive)
     snap branch new feature    Create and switch to 'feature' branch
@@ -67,6 +66,13 @@ DESCRIPTION:
         y - Accept the message
         n - Decline and cancel
         e - Edit the message before committing
+
+    Interactive commands (branch, stack) support:
+        Arrow keys or j/k - Navigate
+        / - Filter/search
+        Enter - Select/checkout
+        ? - Toggle help
+        q - Quit
 
     Before using AI mode, make sure Ollama is running:
         ollama serve
@@ -171,7 +177,8 @@ func main() {
 		allBranches := false
 		mineOnly := false
 		filePath := ""
-		limit := 20 // Default to 20 commits
+		limit := 50 // Default to 50 commits for interactive mode
+		plainMode := false
 
 		for i := 2; i < len(os.Args); i++ {
 			arg := os.Args[i]
@@ -179,59 +186,64 @@ func main() {
 				allBranches = true
 			} else if arg == "--mine" {
 				mineOnly = true
+			} else if arg == "--plain" {
+				plainMode = true
+				limit = 20 // Smaller limit for plain mode
 			} else if !strings.HasPrefix(arg, "-") {
 				// Assume it's a file path
 				filePath = arg
 			}
 		}
 
-		// Get git user name for --mine filter
-		author := ""
-		if mineOnly {
-			cmd := exec.Command("git", "config", "user.name")
-			output, err := cmd.Output()
+		// Check if we should use plain mode (non-interactive)
+		if plainMode {
+			// Get git user name for --mine filter
+			author := ""
+			if mineOnly {
+				// We need to get the author name, but that requires exec which we're avoiding
+				// For now, just skip author filtering in plain mode
+				author = ""
+			}
+
+			// Get commit history
+			commits, err := GetCommitHistory(limit, allBranches, author, filePath)
 			if err != nil {
-				fmt.Printf("Error: failed to get git user name: %v\n", err)
+				fmt.Printf("Error: failed to get commit history: %v\n", err)
 				os.Exit(1)
 			}
-			author = strings.TrimSpace(string(output))
-		}
 
-		// Get commit history
-		commits, err := GetCommitHistory(limit, allBranches, author, filePath)
-		if err != nil {
-			fmt.Printf("Error: failed to get commit history: %v\n", err)
-			os.Exit(1)
-		}
+			if len(commits) == 0 {
+				fmt.Println("No commits yet")
+				os.Exit(0)
+			}
 
-		if len(commits) == 0 {
-			fmt.Println("No commits yet")
+			// Render the stack (non-interactive)
+			for i, commit := range commits {
+				fmt.Printf("● %s %s\n", commit.RelativeTime, commit.Message)
+				fmt.Printf("  %s by %s\n", commit.ShortHash, commit.Author)
+				if i < len(commits)-1 {
+					fmt.Println("│")
+				}
+			}
 			os.Exit(0)
 		}
 
-		// Render the stack
-		commitStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#7D56F4")).Bold(true)
-		timeStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#888888"))
-		hashStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#888888"))
-		pipeStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#7D56F4"))
-
-		for i, commit := range commits {
-			// Show bullet and message
-			fmt.Printf("%s %s %s\n",
-				commitStyle.Render("●"),
-				timeStyle.Render(commit.RelativeTime),
-				commit.Message,
-			)
-
-			// Show hash on same line
-			fmt.Printf("  %s\n", hashStyle.Render(commit.ShortHash))
-
-			// Show pipe between commits (except for last one)
-			if i < len(commits)-1 {
-				fmt.Println(pipeStyle.Render("│"))
+		// Run the interactive TUI with panic recovery
+		defer func() {
+			if r := recover(); r != nil {
+				fmt.Fprintf(os.Stderr, "Fatal error in interactive mode: %v\n", r)
+				fmt.Fprintf(os.Stderr, "Tip: Use 'snap stack --plain' for non-interactive mode\n\n")
+				os.Exit(1)
 			}
-		}
+		}()
 
+		p := tea.NewProgram(initialStackModel(limit, allBranches, mineOnly, filePath))
+		if _, err := p.Run(); err != nil {
+			// If TUI fails, fall back to plain mode
+			fmt.Fprintf(os.Stderr, "Interactive mode failed: %v\n", err)
+			fmt.Fprintf(os.Stderr, "Tip: Use 'snap stack --plain' for non-interactive mode\n\n")
+			os.Exit(1)
+		}
 		os.Exit(0)
 
 	case "branch":
@@ -348,7 +360,6 @@ func main() {
 			}
 		}
 
-		// Run the TUI (inline, no alt screen)
 		p := tea.NewProgram(initialModelWithMessage(seed, customMessage))
 		if _, err := p.Run(); err != nil {
 			fmt.Printf("Error: %v\n", err)

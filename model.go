@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"os/exec"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/spinner"
@@ -129,6 +130,8 @@ func initialModelWithMessage(seed int, customMessage string) model {
 			textInput:     ti,
 		}
 	}
+
+	// No custom message - use AI generation
 	return initialModel(seed)
 }
 
@@ -255,13 +258,24 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.err = msg.err
 			return m, tea.Quit
 		}
+
 		// Validate message is not empty
-		if strings.TrimSpace(msg.message) == "" {
+		cleanMsg := strings.TrimSpace(msg.message)
+		if cleanMsg == "" {
 			m.state = stateError
-			m.err = fmt.Errorf("AI generated an empty commit message. Please try again or use a custom message")
+			m.err = fmt.Errorf("AI generated an empty commit message. Try again or use custom message")
 			return m, tea.Quit
 		}
-		m.commitMessage = msg.message
+
+		// Validate message follows conventional commit format
+		parts := strings.Split(cleanMsg, ":")
+		if len(parts) < 2 || parts[0] == "" {
+			m.state = stateError
+			m.err = fmt.Errorf("Invalid commit message format: %q. Expected: type: description", cleanMsg)
+			return m, tea.Quit
+		}
+
+		m.commitMessage = cleanMsg
 		m.generatedMsg = true
 		m.state = stateConfirming
 		return m, nil
@@ -301,10 +315,21 @@ func (m model) View() string {
 		msgStyle := lipgloss.NewStyle().
 			Foreground(lipgloss.Color("#7D56F4")).
 			Bold(true)
+		debugStyle := lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#888888")).
+			Italic(true)
 		helpStyle := lipgloss.NewStyle().
 			Foreground(lipgloss.Color("#888888"))
-		return fmt.Sprintf("\n%s\n%s %s",
+
+		// Show message type for debugging
+		msgType := "Generated"
+		if m.useCustomMsg {
+			msgType = "Custom"
+		}
+
+		return fmt.Sprintf("\n%s %s\n\n%s %s",
 			msgStyle.Render(m.commitMessage),
+			debugStyle.Render(fmt.Sprintf("[%s message]", msgType)),
 			highlightStyle.Render("(y)es, (n)o, (e)dit:"),
 			helpStyle.Render(""),
 		)
@@ -950,5 +975,402 @@ func replayCommits(ontoBranch string) tea.Cmd {
 	return func() tea.Msg {
 		output, err := ReplayCommits(ontoBranch)
 		return replayCommitsMsg{output: output, err: err}
+	}
+}
+
+// Stack (commit history) TUI model
+type stackState int
+
+const (
+	stackStateLoading stackState = iota
+	stackStateList
+	stackStateFiltering
+	stackStateCheckingOut
+	stackStateShowingDetails
+	stackStateDone
+	stackStateError
+)
+
+type stackModel struct {
+	state           stackState
+	spinner         spinner.Model
+	textInput       textinput.Model
+	commits         []CommitInfo
+	filteredCommits []CommitInfo
+	cursor          int
+	err             error
+	allBranches     bool
+	mineOnly        bool
+	filePath        string
+	author          string
+	limit           int
+	filterMode      bool
+	filterQuery     string
+	showHelp        bool
+	selectedCommit  *CommitInfo
+}
+
+type getCommitsMsg struct {
+	commits []CommitInfo
+	err     error
+}
+
+type checkoutCommitMsg struct {
+	err error
+}
+
+func initialStackModel(limit int, allBranches bool, mineOnly bool, filePath string) stackModel {
+	s := spinner.New()
+	s.Spinner = spinner.Dot
+	s.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("#7D56F4"))
+
+	ti := textinput.New()
+	ti.Placeholder = "Type to filter commits..."
+	ti.CharLimit = 100
+	ti.Width = 50
+	ti.Prompt = ""
+	ti.PromptStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#7D56F4"))
+	ti.TextStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#FFFFFF"))
+	ti.Cursor.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("#7D56F4"))
+
+	// Get author if mineOnly is true
+	author := ""
+	if mineOnly {
+		cmd := exec.Command("git", "config", "user.name")
+		output, err := cmd.Output()
+		if err == nil {
+			author = strings.TrimSpace(string(output))
+		}
+	}
+
+	return stackModel{
+		state:           stackStateLoading,
+		spinner:         s,
+		textInput:       ti,
+		allBranches:     allBranches,
+		mineOnly:        mineOnly,
+		filePath:        filePath,
+		author:          author,
+		limit:           limit,
+		showHelp:        true,
+		commits:         []CommitInfo{},
+		filteredCommits: []CommitInfo{},
+		filterQuery:     "",
+		filterMode:      false,
+	}
+}
+
+func (m stackModel) Init() tea.Cmd {
+	return tea.Batch(m.spinner.Tick, getCommits(m.limit, m.allBranches, m.author, m.filePath))
+}
+
+func (m stackModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		// Handle list navigation and filter mode toggle
+		if m.state == stackStateList {
+			// Check for filter mode entry FIRST, before handling filter input
+			if !m.filterMode && msg.String() == "/" {
+				// Enter filter mode
+				m.filterMode = true
+				m.filterQuery = ""
+				m.textInput.SetValue("")
+				m.textInput.Focus()
+				// Return with blink to start cursor animation
+				return m, textinput.Blink
+			}
+
+			// Handle filter mode input
+			if m.filterMode {
+				switch msg.String() {
+				case "esc", "ctrl+c", "q":
+					m.filterMode = false
+					m.filterQuery = ""
+					m.textInput.SetValue("")
+					m.textInput.Blur()
+					m.filteredCommits = m.commits
+					m.cursor = 0
+					return m, nil
+				case "enter":
+					m.filterMode = false
+					m.textInput.Blur()
+					return m, nil
+				default:
+					var cmd tea.Cmd
+					m.textInput, cmd = m.textInput.Update(msg)
+					m.filterQuery = m.textInput.Value()
+					m.applyFilter()
+					m.cursor = 0
+					return m, cmd
+				}
+			}
+
+			// Handle normal list navigation
+			switch msg.String() {
+			case "ctrl+c", "q":
+				return m, tea.Quit
+			case "up", "k":
+				if m.cursor > 0 {
+					m.cursor--
+				}
+			case "down", "j":
+				if m.cursor < len(m.getDisplayCommits())-1 {
+					m.cursor++
+				}
+			case "g":
+				// Go to top
+				m.cursor = 0
+			case "G":
+				// Go to bottom
+				m.cursor = len(m.getDisplayCommits()) - 1
+			case "c":
+				// Clear filter
+				m.filterQuery = ""
+				m.textInput.SetValue("")
+				m.filteredCommits = m.commits
+				m.cursor = 0
+			case "enter":
+				// Checkout selected commit
+				commits := m.getDisplayCommits()
+				if len(commits) > 0 && m.cursor < len(commits) {
+					m.selectedCommit = &commits[m.cursor]
+					m.state = stackStateCheckingOut
+					return m, checkoutCommitCmd(m.selectedCommit.Hash)
+				}
+			// Disabled for now - coming soon
+			// case "d":
+			// 	// Show commit details
+			// 	commits := m.getDisplayCommits()
+			// 	if len(commits) > 0 && m.cursor < len(commits) {
+			// 		m.selectedCommit = &commits[m.cursor]
+			// 		m.state = stackStateShowingDetails
+			// 		return m, getCommitDetailsCmd(m.selectedCommit.Hash)
+			// 	}
+			case "?":
+				m.showHelp = !m.showHelp
+			}
+		}
+
+	case spinner.TickMsg:
+		var cmd tea.Cmd
+		m.spinner, cmd = m.spinner.Update(msg)
+		return m, cmd
+
+	case getCommitsMsg:
+		if msg.err != nil {
+			m.state = stackStateError
+			m.err = msg.err
+			return m, tea.Quit
+		}
+		m.commits = msg.commits
+		m.filteredCommits = msg.commits
+		if len(msg.commits) == 0 {
+			m.state = stackStateError
+			m.err = fmt.Errorf("no commits found")
+			return m, tea.Quit
+		}
+		m.state = stackStateList
+		return m, nil
+
+	case checkoutCommitMsg:
+		if msg.err != nil {
+			m.state = stackStateError
+			m.err = msg.err
+			return m, tea.Quit
+		}
+		m.state = stackStateDone
+		return m, tea.Quit
+	}
+
+	return m, nil
+}
+
+func (m *stackModel) applyFilter() {
+	if m.filterQuery == "" {
+		m.filteredCommits = m.commits
+		return
+	}
+
+	query := strings.ToLower(m.filterQuery)
+	filtered := make([]CommitInfo, 0)
+
+	for _, commit := range m.commits {
+		// Search in message, hash, and author
+		if strings.Contains(strings.ToLower(commit.Message), query) ||
+			strings.Contains(strings.ToLower(commit.Hash), query) ||
+			strings.Contains(strings.ToLower(commit.ShortHash), query) ||
+			strings.Contains(strings.ToLower(commit.Author), query) {
+			filtered = append(filtered, commit)
+		}
+	}
+
+	m.filteredCommits = filtered
+}
+
+func (m stackModel) getDisplayCommits() []CommitInfo {
+	if m.filterQuery != "" {
+		if m.filteredCommits == nil {
+			return []CommitInfo{}
+		}
+		return m.filteredCommits
+	}
+	if m.commits == nil {
+		return []CommitInfo{}
+	}
+	return m.commits
+}
+
+func (m stackModel) View() string {
+	switch m.state {
+	case stackStateLoading:
+		return fmt.Sprintf("%s Loading commits...", m.spinner.View())
+
+	case stackStateList:
+		var s strings.Builder
+
+		titleStyle := lipgloss.NewStyle().
+			Bold(true).
+			Foreground(lipgloss.Color("#7D56F4"))
+
+		title := "Commit History"
+		if m.allBranches {
+			title += " (all branches)"
+		}
+		if m.mineOnly {
+			title += " (mine)"
+		}
+		if m.filePath != "" {
+			title += fmt.Sprintf(" - %s", m.filePath)
+		}
+
+		s.WriteString(titleStyle.Render(title))
+		s.WriteString("\n\n")
+
+		// Show filter bar
+		if m.filterMode {
+			filterLabelStyle := lipgloss.NewStyle().
+				Foreground(lipgloss.Color("#7D56F4")).
+				Bold(true)
+			s.WriteString(filterLabelStyle.Render("🔍 Filter: "))
+			s.WriteString(m.textInput.View())
+			s.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("#888888")).Render(" (Esc/Ctrl+C/q to cancel)"))
+			s.WriteString("\n\n")
+		} else if m.filterQuery != "" {
+			filterStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#888888"))
+			s.WriteString(filterStyle.Render(fmt.Sprintf("🔍 Active filter: %s (press 'c' to clear)", m.filterQuery)))
+			s.WriteString("\n\n")
+		}
+
+		commits := m.getDisplayCommits()
+
+		if len(commits) == 0 {
+			s.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("#888888")).Render("No commits match filter"))
+			s.WriteString("\n")
+		} else {
+			commitStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#7D56F4")).Bold(true)
+			timeStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#888888"))
+			hashStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#888888"))
+			authorStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#888888"))
+			cursorStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#7D56F4")).Bold(true)
+			pipeStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#7D56F4"))
+
+			for i, commit := range commits {
+				cursor := "  "
+				if i == m.cursor {
+					cursor = cursorStyle.Render("→ ")
+				}
+
+				// Show bullet, time and message
+				s.WriteString(fmt.Sprintf("%s%s %s %s\n",
+					cursor,
+					commitStyle.Render("●"),
+					timeStyle.Render(commit.RelativeTime),
+					commit.Message,
+				))
+
+				// Show hash and author
+				s.WriteString(fmt.Sprintf("   %s",
+					hashStyle.Render(commit.ShortHash),
+				))
+
+				if !m.mineOnly {
+					s.WriteString(fmt.Sprintf(" %s",
+						authorStyle.Render(fmt.Sprintf("by %s", commit.Author)),
+					))
+				}
+				s.WriteString("\n")
+
+				// Show pipe between commits (except for last one)
+				if i < len(commits)-1 {
+					s.WriteString("  " + pipeStyle.Render("│") + "\n")
+				}
+			}
+		}
+
+		s.WriteString("\n")
+
+		// Show help
+		if m.showHelp {
+			helpStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#888888"))
+			if m.filterMode {
+				s.WriteString(helpStyle.Render("Type to filter • Enter: apply • Esc/Ctrl+C/q: cancel"))
+			} else {
+				s.WriteString(helpStyle.Render("↑/k: up  ↓/j: down  g: top  G: bottom  /: filter  c: clear filter"))
+				s.WriteString("\n")
+				s.WriteString(helpStyle.Render("Enter: checkout  ?: toggle help  q: quit"))
+			}
+		} else {
+			helpStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#888888"))
+			s.WriteString(helpStyle.Render("Press ? for help"))
+		}
+
+		return s.String()
+
+	case stackStateCheckingOut:
+		if m.selectedCommit != nil {
+			return fmt.Sprintf("%s Checking out commit %s...", m.spinner.View(), m.selectedCommit.ShortHash)
+		}
+		return fmt.Sprintf("%s Checking out commit...", m.spinner.View())
+
+	case stackStateDone:
+		if m.selectedCommit != nil {
+			warningStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#FFAA00")).Bold(true)
+			infoStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#888888"))
+
+			var s strings.Builder
+			s.WriteString(successStyle.Render(fmt.Sprintf("✓ Checked out commit %s", m.selectedCommit.ShortHash)) + "\n")
+			s.WriteString(warningStyle.Render("⚠ You are now in 'detached HEAD' state") + "\n\n")
+			s.WriteString(infoStyle.Render("You can look around, make experimental changes and commit them.\n"))
+			s.WriteString(infoStyle.Render("To return to a branch, run: ") + highlightStyle.Render("snap branch switch <branch-name>"))
+
+			return s.String()
+		}
+		return successStyle.Render("✓ Done")
+
+	case stackStateError:
+		return errorStyle.Render(fmt.Sprintf("✗ Error: %s", m.err))
+	}
+
+	return ""
+}
+
+func getCommits(limit int, allBranches bool, author string, filePath string) tea.Cmd {
+	return func() tea.Msg {
+		commits, err := GetCommitHistory(limit, allBranches, author, filePath)
+		return getCommitsMsg{commits: commits, err: err}
+	}
+}
+
+func checkoutCommitCmd(commitHash string) tea.Cmd {
+	return func() tea.Msg {
+		err := CheckoutCommit(commitHash)
+		return checkoutCommitMsg{err: err}
+	}
+}
+
+func getCommitDetailsCmd(commitHash string) tea.Cmd {
+	return func() tea.Msg {
+		// For now, just return nil - we'll implement details view later
+		return nil
 	}
 }
