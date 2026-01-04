@@ -14,6 +14,24 @@ The name evokes the idea of taking **snapshots**, being **quick/snappy**, and th
 - **Time-based thinking** - "when" instead of just hashes
 - **Combined operations** - one command for common workflows
 
+## Implementation Status
+
+Snap is currently under active development. Here's what works today:
+
+| Command | Status | Description |
+|---------|--------|-------------|
+| `snap changes` | ✅ Working | Show uncommitted changes with colors |
+| `snap save` | ✅ Working | Commit changes (with AI or custom message) |
+| `snap sync` | ✅ Working | Smart push/pull with conflict detection |
+| `snap undo` | 🚧 Planned | Undo last commit |
+| `snap goto` | 🚧 Planned | Time travel through history |
+| `snap branch` | 🚧 Planned | Create/switch branches |
+| `snap fork` | 🚧 Planned | Clone repository |
+| `snap merge` | 🚧 Planned | Merge branches |
+| `snap stack` | 🚧 Planned | Visual commit history |
+| `snap diff` | 🚧 Planned | Show file changes |
+| `snap ignore` | 🚧 Planned | Add to .gitignore |
+
 ## Core Commands
 
 ### `snap changes`
