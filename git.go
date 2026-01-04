@@ -39,3 +39,13 @@ func CommitChanges(message string) error {
 	cmd := exec.Command("git", "commit", "-m", message)
 	return cmd.Run()
 }
+
+// GetStatus returns the git status showing modified, added, and untracked files
+func GetStatus() (string, error) {
+	cmd := exec.Command("git", "status", "--short")
+	output, err := cmd.Output()
+	if err != nil {
+		return "", err
+	}
+	return string(output), nil
+}

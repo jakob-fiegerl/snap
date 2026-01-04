@@ -16,6 +16,13 @@ The name evokes the idea of taking **snapshots**, being **quick/snappy**, and th
 
 ## Core Commands
 
+### `snap changes`
+See what files have changed. Shows modified, added, and untracked files.
+
+```bash
+snap changes
+```
+
 ### `snap save [message]`
 Commit your changes. No staging area confusion, just save what you've changed.
 
@@ -125,6 +132,7 @@ ollama pull phi4
 Snap is a wrapper around Git that translates intuitive commands into Git operations. You get all the power of Git with none of the confusion.
 
 Behind the scenes:
+- `snap changes` → `git status --short`
 - `snap save` → `git add -A && git commit`
 - `snap undo` → `git reset` (soft/hard depending on flags)
 - `snap goto` → `git checkout` with smart date/message parsing
@@ -144,6 +152,7 @@ Git's complexity comes from its history and Unix philosophy. Snap reimagines ver
 
 | Git Command | Snap Equivalent |
 |-------------|-----------------|
+| `git status` | `snap changes` |
 | `git add . && git commit -m "msg"` | `snap save "msg"` |
 | `git commit --amend` | `snap undo` |
 | `git checkout <ref>` | `snap goto <ref>` |
@@ -158,7 +167,10 @@ Git's complexity comes from its history and Unix philosophy. Snap reimagines ver
 # Start a new project
 snap init
 
-# Make some changes, then save
+# Make some changes, check what changed
+snap changes
+
+# Save the changes
 snap save "Initial setup"
 
 # Oops, forgot something

@@ -19,6 +19,7 @@ USAGE:
 
 COMMANDS:
     save [MESSAGE]      Save changes with AI-generated or custom commit message
+    changes             Show uncommitted changes
     help, --help, -h    Show this help message
     version, --version  Show version information
 
@@ -28,6 +29,7 @@ OPTIONS:
 
 EXAMPLES:
     snap                       Show this help message
+    snap changes               Show what files have changed
     snap save                  Save changes with AI-generated message
     snap save "fix: bug"       Save changes with custom message
     snap save -m "fix: bug"    Save changes with custom message (flag style)
@@ -80,6 +82,21 @@ func main() {
 
 	case "version", "--version", "-v":
 		printVersion()
+		os.Exit(0)
+
+	case "changes":
+		status, err := GetStatus()
+		if err != nil {
+			fmt.Printf("Error: failed to get status: %v\n", err)
+			os.Exit(1)
+		}
+
+		if status == "" {
+			fmt.Println("No changes - everything is clean!")
+		} else {
+			fmt.Println("Changes:")
+			fmt.Print(status)
+		}
 		os.Exit(0)
 
 	case "save":
