@@ -85,7 +85,7 @@ func main() {
 		os.Exit(0)
 
 	case "changes":
-		status, err := GetStatus()
+		status, err := GetColoredStatus()
 		if err != nil {
 			fmt.Printf("Error: failed to get status: %v\n", err)
 			os.Exit(1)

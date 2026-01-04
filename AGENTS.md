@@ -14,6 +14,8 @@ Snap is a Git wrapper written in Go that provides intuitive, conversational comm
 
 ## Build, Test, and Lint Commands
 
+Whenever you build a new feature, make sure to add proper test and update the documentation.
+
 ### Building
 ```bash
 # Build the binary
