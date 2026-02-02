@@ -520,3 +520,240 @@ func GetMergeBase(branch1, branch2 string) (string, error) {
 	}
 	return strings.TrimSpace(string(output)), nil
 }
+
+// TagInfo represents a git tag with metadata
+type TagInfo struct {
+	Name         string
+	ShortHash    string
+	Message      string
+	RelativeTime string
+}
+
+// CommitWithStats represents a commit with change statistics
+type CommitWithStats struct {
+	Hash         string
+	ShortHash    string
+	Message      string
+	Author       string
+	RelativeTime string
+	Additions    int
+	Deletions    int
+	FilesChanged int
+}
+
+// GetTags returns a list of all tags sorted by date (newest first)
+func GetTags() ([]TagInfo, error) {
+	// Use for-each-ref to get tag info sorted by creatordate descending
+	cmd := exec.Command("git", "for-each-ref",
+		"--sort=-creatordate",
+		"--format=%(refname:short)|%(objectname:short)|%(subject)|%(creatordate:relative)",
+		"refs/tags")
+	output, err := cmd.Output()
+	if err != nil {
+		return nil, err
+	}
+
+	if len(output) == 0 {
+		return []TagInfo{}, nil
+	}
+
+	lines := strings.Split(strings.TrimSpace(string(output)), "\n")
+	tags := make([]TagInfo, 0, len(lines))
+
+	for _, line := range lines {
+		if line == "" {
+			continue
+		}
+		parts := strings.SplitN(line, "|", 4)
+		if len(parts) < 4 {
+			continue
+		}
+
+		tags = append(tags, TagInfo{
+			Name:         parts[0],
+			ShortHash:    parts[1],
+			Message:      parts[2],
+			RelativeTime: parts[3],
+		})
+	}
+
+	return tags, nil
+}
+
+// GetMostRecentTag returns the most recent tag on the current branch
+func GetMostRecentTag() (string, error) {
+	cmd := exec.Command("git", "describe", "--tags", "--abbrev=0")
+	output, err := cmd.Output()
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(output)), nil
+}
+
+// GetCommitsSinceTag returns commits between a tag and HEAD with stats
+func GetCommitsSinceTag(tagName string) ([]CommitWithStats, error) {
+	var ref string
+	if tagName == "" {
+		// If no tag, get all commits
+		ref = ""
+	} else {
+		ref = tagName + "..HEAD"
+	}
+
+	// Get commit info
+	args := []string{"log", "--pretty=format:%H|%h|%s|%an|%ar"}
+	if ref != "" {
+		args = append(args, ref)
+	}
+
+	cmd := exec.Command("git", args...)
+	output, err := cmd.Output()
+	if err != nil {
+		return nil, err
+	}
+
+	if len(output) == 0 {
+		return []CommitWithStats{}, nil
+	}
+
+	lines := strings.Split(strings.TrimSpace(string(output)), "\n")
+	commits := make([]CommitWithStats, 0, len(lines))
+
+	for _, line := range lines {
+		if line == "" {
+			continue
+		}
+		parts := strings.SplitN(line, "|", 5)
+		if len(parts) < 5 {
+			continue
+		}
+
+		commit := CommitWithStats{
+			Hash:         parts[0],
+			ShortHash:    parts[1],
+			Message:      parts[2],
+			Author:       parts[3],
+			RelativeTime: parts[4],
+		}
+
+		// Get stats for this commit
+		statsCmd := exec.Command("git", "diff", "--shortstat", commit.Hash+"^.."+commit.Hash)
+		statsOutput, err := statsCmd.Output()
+		if err == nil {
+			parseCommitStats(string(statsOutput), &commit)
+		}
+
+		commits = append(commits, commit)
+	}
+
+	return commits, nil
+}
+
+// parseCommitStats parses git diff --shortstat output
+func parseCommitStats(stats string, commit *CommitWithStats) {
+	// Format: " 3 files changed, 10 insertions(+), 5 deletions(-)"
+	stats = strings.TrimSpace(stats)
+	if stats == "" {
+		return
+	}
+
+	// Parse files changed
+	if idx := strings.Index(stats, " file"); idx > 0 {
+		var files int
+		fmt.Sscanf(stats[:idx], "%d", &files)
+		commit.FilesChanged = files
+	}
+
+	// Parse insertions
+	if idx := strings.Index(stats, " insertion"); idx > 0 {
+		// Find the number before "insertion"
+		part := stats[:idx]
+		if lastComma := strings.LastIndex(part, ","); lastComma >= 0 {
+			part = part[lastComma+1:]
+		}
+		var ins int
+		fmt.Sscanf(strings.TrimSpace(part), "%d", &ins)
+		commit.Additions = ins
+	}
+
+	// Parse deletions
+	if idx := strings.Index(stats, " deletion"); idx > 0 {
+		part := stats[:idx]
+		if lastComma := strings.LastIndex(part, ","); lastComma >= 0 {
+			part = part[lastComma+1:]
+		}
+		var del int
+		fmt.Sscanf(strings.TrimSpace(part), "%d", &del)
+		commit.Deletions = del
+	}
+}
+
+// GetTagDiffStats returns total stats between a tag and HEAD
+func GetTagDiffStats(tagName string) (additions, deletions, filesChanged int, err error) {
+	var ref string
+	if tagName == "" {
+		// Compare with empty tree
+		ref = "4b825dc642cb6eb9a060e54bf8d69288fbee4904..HEAD"
+	} else {
+		ref = tagName + "..HEAD"
+	}
+
+	cmd := exec.Command("git", "diff", "--shortstat", ref)
+	output, err := cmd.Output()
+	if err != nil {
+		return 0, 0, 0, err
+	}
+
+	stats := strings.TrimSpace(string(output))
+	if stats == "" {
+		return 0, 0, 0, nil
+	}
+
+	// Parse files changed
+	if idx := strings.Index(stats, " file"); idx > 0 {
+		fmt.Sscanf(stats[:idx], "%d", &filesChanged)
+	}
+
+	// Parse insertions
+	if idx := strings.Index(stats, " insertion"); idx > 0 {
+		part := stats[:idx]
+		if lastComma := strings.LastIndex(part, ","); lastComma >= 0 {
+			part = part[lastComma+1:]
+		}
+		fmt.Sscanf(strings.TrimSpace(part), "%d", &additions)
+	}
+
+	// Parse deletions
+	if idx := strings.Index(stats, " deletion"); idx > 0 {
+		part := stats[:idx]
+		if lastComma := strings.LastIndex(part, ","); lastComma >= 0 {
+			part = part[lastComma+1:]
+		}
+		fmt.Sscanf(strings.TrimSpace(part), "%d", &deletions)
+	}
+
+	return additions, deletions, filesChanged, nil
+}
+
+// CreateAnnotatedTag creates an annotated tag with a message
+func CreateAnnotatedTag(tagName, message string) error {
+	cmd := exec.Command("git", "tag", "-a", tagName, "-m", message)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("%w: %s", err, string(output))
+	}
+	return nil
+}
+
+// PushTag pushes a tag to the remote repository
+func PushTag(tagName string) (string, error) {
+	cmd := exec.Command("git", "push", "origin", tagName)
+	output, err := cmd.CombinedOutput()
+	return string(output), err
+}
+
+// DeleteTag deletes a local tag
+func DeleteTag(tagName string) error {
+	cmd := exec.Command("git", "tag", "-d", tagName)
+	return cmd.Run()
+}

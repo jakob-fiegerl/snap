@@ -1374,3 +1374,789 @@ func getCommitDetailsCmd(commitHash string) tea.Cmd {
 		return nil
 	}
 }
+
+// Tags TUI model
+type tagsState int
+
+const (
+	tagsStateLoading tagsState = iota
+	tagsStateList
+	tagsStateDone
+	tagsStateError
+)
+
+type tagsModel struct {
+	state        tagsState
+	spinner      spinner.Model
+	textInput    textinput.Model
+	tags         []TagInfo
+	filteredTags []TagInfo
+	cursor       int
+	err          error
+	filterMode   bool
+	filterQuery  string
+	showHelp     bool
+	width        int
+	height       int
+}
+
+type getTagsMsg struct {
+	tags []TagInfo
+	err  error
+}
+
+func initialTagsModel() tagsModel {
+	s := spinner.New()
+	s.Spinner = spinner.Dot
+	s.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("#7D56F4"))
+
+	ti := textinput.New()
+	ti.Placeholder = "Type to filter tags..."
+	ti.CharLimit = 100
+	ti.Width = 50
+	ti.Prompt = ""
+	ti.PromptStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#7D56F4"))
+	ti.TextStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#FFFFFF"))
+	ti.Cursor.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("#7D56F4"))
+
+	return tagsModel{
+		state:        tagsStateLoading,
+		spinner:      s,
+		textInput:    ti,
+		showHelp:     true,
+		tags:         []TagInfo{},
+		filteredTags: []TagInfo{},
+		filterQuery:  "",
+		filterMode:   false,
+		width:        80, // default, will be updated by WindowSizeMsg
+		height:       24,
+	}
+}
+
+func (m tagsModel) Init() tea.Cmd {
+	return tea.Batch(m.spinner.Tick, getTagsCmd)
+}
+
+func (m tagsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		m.width = msg.Width
+		m.height = msg.Height
+		m.textInput.Width = msg.Width - 20
+		return m, nil
+
+	case tea.KeyMsg:
+		if m.state == tagsStateList {
+			// Check for filter mode entry FIRST
+			if !m.filterMode && msg.String() == "/" {
+				m.filterMode = true
+				m.filterQuery = ""
+				m.textInput.SetValue("")
+				m.textInput.Focus()
+				return m, textinput.Blink
+			}
+
+			// Handle filter mode input
+			if m.filterMode {
+				switch msg.String() {
+				case "esc", "ctrl+c", "q":
+					m.filterMode = false
+					m.filterQuery = ""
+					m.textInput.SetValue("")
+					m.textInput.Blur()
+					m.filteredTags = m.tags
+					m.cursor = 0
+					return m, nil
+				case "enter":
+					m.filterMode = false
+					m.textInput.Blur()
+					return m, nil
+				default:
+					var cmd tea.Cmd
+					m.textInput, cmd = m.textInput.Update(msg)
+					m.filterQuery = m.textInput.Value()
+					m.applyFilter()
+					m.cursor = 0
+					return m, cmd
+				}
+			}
+
+			// Handle normal list navigation
+			switch msg.String() {
+			case "ctrl+c", "q":
+				return m, tea.Quit
+			case "up", "k":
+				if m.cursor > 0 {
+					m.cursor--
+				}
+			case "down", "j":
+				if m.cursor < len(m.getDisplayTags())-1 {
+					m.cursor++
+				}
+			case "g":
+				m.cursor = 0
+			case "G":
+				m.cursor = len(m.getDisplayTags()) - 1
+			case "c":
+				m.filterQuery = ""
+				m.textInput.SetValue("")
+				m.filteredTags = m.tags
+				m.cursor = 0
+			case "?":
+				m.showHelp = !m.showHelp
+			}
+		}
+
+	case spinner.TickMsg:
+		var cmd tea.Cmd
+		m.spinner, cmd = m.spinner.Update(msg)
+		return m, cmd
+
+	case getTagsMsg:
+		if msg.err != nil {
+			m.state = tagsStateError
+			m.err = msg.err
+			return m, tea.Quit
+		}
+		m.tags = msg.tags
+		m.filteredTags = msg.tags
+		if len(msg.tags) == 0 {
+			m.state = tagsStateError
+			m.err = fmt.Errorf("no tags found")
+			return m, tea.Quit
+		}
+		m.state = tagsStateList
+		return m, nil
+	}
+
+	return m, nil
+}
+
+func (m *tagsModel) applyFilter() {
+	if m.filterQuery == "" {
+		m.filteredTags = m.tags
+		return
+	}
+
+	query := strings.ToLower(m.filterQuery)
+	filtered := make([]TagInfo, 0)
+
+	for _, tag := range m.tags {
+		if strings.Contains(strings.ToLower(tag.Name), query) ||
+			strings.Contains(strings.ToLower(tag.Message), query) ||
+			strings.Contains(strings.ToLower(tag.ShortHash), query) {
+			filtered = append(filtered, tag)
+		}
+	}
+
+	m.filteredTags = filtered
+}
+
+func (m tagsModel) getDisplayTags() []TagInfo {
+	if m.filterQuery != "" {
+		if m.filteredTags == nil {
+			return []TagInfo{}
+		}
+		return m.filteredTags
+	}
+	if m.tags == nil {
+		return []TagInfo{}
+	}
+	return m.tags
+}
+
+func (m tagsModel) View() string {
+	switch m.state {
+	case tagsStateLoading:
+		return fmt.Sprintf("%s Loading tags...", m.spinner.View())
+
+	case tagsStateList:
+		var s strings.Builder
+
+		titleStyle := lipgloss.NewStyle().
+			Bold(true).
+			Foreground(lipgloss.Color("#7D56F4"))
+
+		s.WriteString(titleStyle.Render("Tags"))
+		s.WriteString("\n\n")
+
+		// Show filter bar
+		if m.filterMode {
+			filterLabelStyle := lipgloss.NewStyle().
+				Foreground(lipgloss.Color("#7D56F4")).
+				Bold(true)
+			s.WriteString(filterLabelStyle.Render("Filter: "))
+			s.WriteString(m.textInput.View())
+			s.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("#888888")).Render(" (Esc to cancel)"))
+			s.WriteString("\n\n")
+		} else if m.filterQuery != "" {
+			filterStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#888888"))
+			s.WriteString(filterStyle.Render(fmt.Sprintf("Filter: %s (press 'c' to clear)", m.filterQuery)))
+			s.WriteString("\n\n")
+		}
+
+		tags := m.getDisplayTags()
+
+		if len(tags) == 0 {
+			s.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("#888888")).Render("No tags match filter"))
+			s.WriteString("\n")
+		} else {
+			tagStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#04B575")).Bold(true)
+			hashStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#888888"))
+			timeStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#888888"))
+			msgStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#FFFFFF"))
+			cursorStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#7D56F4")).Bold(true)
+
+			// Calculate max tag name width for alignment
+			maxTagWidth := 0
+			for _, tag := range tags {
+				if len(tag.Name) > maxTagWidth {
+					maxTagWidth = len(tag.Name)
+				}
+			}
+
+			for i, tag := range tags {
+				cursor := "  "
+				if i == m.cursor {
+					cursor = cursorStyle.Render("→ ")
+				}
+
+				// Pad tag name for alignment
+				paddedName := fmt.Sprintf("%-*s", maxTagWidth, tag.Name)
+
+				// Calculate available width for message
+				// cursor(2) + name + spacing(2) + hash(7) + spacing(2) + time(~15)
+				metaWidth := 2 + maxTagWidth + 2 + 7 + 2 + len(tag.RelativeTime) + 2
+				msgWidth := m.width - metaWidth
+				if msgWidth < 20 {
+					msgWidth = 20
+				}
+
+				// Truncate message if needed
+				msg := tag.Message
+				if len(msg) > msgWidth {
+					msg = msg[:msgWidth-3] + "..."
+				}
+
+				// Build the line with proper spacing
+				line := fmt.Sprintf("%s%s  %s  %s",
+					cursor,
+					tagStyle.Render(paddedName),
+					hashStyle.Render(tag.ShortHash),
+					timeStyle.Render(tag.RelativeTime),
+				)
+
+				if msg != "" {
+					line += "  " + msgStyle.Render(msg)
+				}
+
+				s.WriteString(line)
+				s.WriteString("\n")
+
+				if i < len(tags)-1 {
+					s.WriteString("\n")
+				}
+			}
+		}
+
+		s.WriteString("\n")
+
+		// Show help
+		if m.showHelp {
+			helpStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#888888"))
+			if m.filterMode {
+				s.WriteString(helpStyle.Render("Type to filter • Enter: apply • Esc: cancel"))
+			} else {
+				s.WriteString(helpStyle.Render("↑/k: up  ↓/j: down  g: top  G: bottom  /: filter  c: clear  ?: help  q: quit"))
+			}
+		} else {
+			helpStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#888888"))
+			s.WriteString(helpStyle.Render("Press ? for help"))
+		}
+
+		return s.String()
+
+	case tagsStateError:
+		return errorStyle.Render(fmt.Sprintf("✗ Error: %s", m.err))
+	}
+
+	return ""
+}
+
+func getTagsCmd() tea.Msg {
+	tags, err := GetTags()
+	return getTagsMsg{tags: tags, err: err}
+}
+
+// Tags Diff TUI model
+type tagsDiffState int
+
+const (
+	tagsDiffStateLoading tagsDiffState = iota
+	tagsDiffStateList
+	tagsDiffStateError
+)
+
+type tagsDiffModel struct {
+	state       tagsDiffState
+	spinner     spinner.Model
+	commits     []CommitWithStats
+	previousTag string
+	err         error
+	width       int
+	height      int
+	cursor      int
+	showHelp    bool
+}
+
+type getTagsDiffMsg struct {
+	commits     []CommitWithStats
+	previousTag string
+	err         error
+}
+
+func initialTagsDiffModel() tagsDiffModel {
+	s := spinner.New()
+	s.Spinner = spinner.Dot
+	s.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("#7D56F4"))
+
+	return tagsDiffModel{
+		state:    tagsDiffStateLoading,
+		spinner:  s,
+		showHelp: true,
+		width:    80,
+		height:   24,
+	}
+}
+
+func (m tagsDiffModel) Init() tea.Cmd {
+	return tea.Batch(m.spinner.Tick, getTagsDiffCmd)
+}
+
+func (m tagsDiffModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		m.width = msg.Width
+		m.height = msg.Height
+		return m, nil
+
+	case tea.KeyMsg:
+		if m.state == tagsDiffStateList {
+			switch msg.String() {
+			case "ctrl+c", "q":
+				return m, tea.Quit
+			case "up", "k":
+				if m.cursor > 0 {
+					m.cursor--
+				}
+			case "down", "j":
+				if m.cursor < len(m.commits)-1 {
+					m.cursor++
+				}
+			case "g":
+				m.cursor = 0
+			case "G":
+				m.cursor = len(m.commits) - 1
+			case "?":
+				m.showHelp = !m.showHelp
+			}
+		}
+
+	case spinner.TickMsg:
+		var cmd tea.Cmd
+		m.spinner, cmd = m.spinner.Update(msg)
+		return m, cmd
+
+	case getTagsDiffMsg:
+		if msg.err != nil {
+			m.state = tagsDiffStateError
+			m.err = msg.err
+			return m, tea.Quit
+		}
+		m.commits = msg.commits
+		m.previousTag = msg.previousTag
+		if len(msg.commits) == 0 {
+			m.state = tagsDiffStateError
+			m.err = fmt.Errorf("no commits since %s", msg.previousTag)
+			return m, tea.Quit
+		}
+		m.state = tagsDiffStateList
+		return m, nil
+	}
+
+	return m, nil
+}
+
+func (m tagsDiffModel) View() string {
+	switch m.state {
+	case tagsDiffStateLoading:
+		return fmt.Sprintf("%s Loading diff...", m.spinner.View())
+
+	case tagsDiffStateList:
+		var s strings.Builder
+
+		titleStyle := lipgloss.NewStyle().
+			Bold(true).
+			Foreground(lipgloss.Color("#7D56F4"))
+
+		s.WriteString(titleStyle.Render("Changes since " + m.previousTag))
+		s.WriteString("\n\n")
+
+		// Summary
+		totalAdditions := 0
+		totalDeletions := 0
+		for _, c := range m.commits {
+			totalAdditions += c.Additions
+			totalDeletions += c.Deletions
+		}
+
+		summaryStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#888888"))
+		addStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#04B575"))
+		delStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#FF5555"))
+
+		s.WriteString(summaryStyle.Render(fmt.Sprintf("%d commits  ", len(m.commits))))
+		s.WriteString(addStyle.Render(fmt.Sprintf("+%d", totalAdditions)))
+		s.WriteString(summaryStyle.Render("  "))
+		s.WriteString(delStyle.Render(fmt.Sprintf("-%d", totalDeletions)))
+		s.WriteString("\n\n")
+
+		// Commits
+		hashStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#FFAA00"))
+		msgStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#FFFFFF"))
+		timeStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#888888"))
+		cursorStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#7D56F4")).Bold(true)
+
+		for i, commit := range m.commits {
+			cursor := "  "
+			if i == m.cursor {
+				cursor = cursorStyle.Render("→ ")
+			}
+
+			// Format: cursor hash +add -del message (time)
+			statsStr := ""
+			if commit.Additions > 0 || commit.Deletions > 0 {
+				statsStr = fmt.Sprintf(" %s %s",
+					addStyle.Render(fmt.Sprintf("+%d", commit.Additions)),
+					delStyle.Render(fmt.Sprintf("-%d", commit.Deletions)),
+				)
+			}
+
+			// Truncate message if needed
+			msg := commit.Message
+			maxMsgLen := m.width - 40
+			if maxMsgLen < 20 {
+				maxMsgLen = 20
+			}
+			if len(msg) > maxMsgLen {
+				msg = msg[:maxMsgLen-3] + "..."
+			}
+
+			s.WriteString(fmt.Sprintf("%s%s%s  %s  %s\n",
+				cursor,
+				hashStyle.Render(commit.ShortHash),
+				statsStr,
+				msgStyle.Render(msg),
+				timeStyle.Render(commit.RelativeTime),
+			))
+		}
+
+		s.WriteString("\n")
+
+		if m.showHelp {
+			helpStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#888888"))
+			s.WriteString(helpStyle.Render("↑/k: up  ↓/j: down  g: top  G: bottom  ?: help  q: quit"))
+		} else {
+			helpStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#888888"))
+			s.WriteString(helpStyle.Render("Press ? for help"))
+		}
+
+		return s.String()
+
+	case tagsDiffStateError:
+		return errorStyle.Render(fmt.Sprintf("✗ Error: %s", m.err))
+	}
+
+	return ""
+}
+
+func getTagsDiffCmd() tea.Msg {
+	// Get the most recent tag
+	prevTag, err := GetMostRecentTag()
+	if err != nil {
+		prevTag = "(no previous tag)"
+	}
+
+	// Get commits since that tag
+	commits, err := GetCommitsSinceTag(prevTag)
+	if err != nil {
+		return getTagsDiffMsg{err: err}
+	}
+
+	return getTagsDiffMsg{commits: commits, previousTag: prevTag}
+}
+
+// Tags Create TUI model
+type tagsCreateState int
+
+const (
+	tagsCreateStateLoading tagsCreateState = iota
+	tagsCreateStatePreview
+	tagsCreateStateConfirm
+	tagsCreateStateCreating
+	tagsCreateStatePushing
+	tagsCreateStateDone
+	tagsCreateStateError
+)
+
+type tagsCreateModel struct {
+	state       tagsCreateState
+	spinner     spinner.Model
+	commits     []CommitWithStats
+	previousTag string
+	newTag      string
+	err         error
+	width       int
+	height      int
+	cursor      int
+	showHelp    bool
+}
+
+type createTagMsg struct {
+	err error
+}
+
+type pushTagMsg struct {
+	output string
+	err    error
+}
+
+func initialTagsCreateModel(tagName string) tagsCreateModel {
+	s := spinner.New()
+	s.Spinner = spinner.Dot
+	s.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("#7D56F4"))
+
+	return tagsCreateModel{
+		state:    tagsCreateStateLoading,
+		spinner:  s,
+		newTag:   tagName,
+		showHelp: true,
+		width:    80,
+		height:   24,
+	}
+}
+
+func (m tagsCreateModel) Init() tea.Cmd {
+	return tea.Batch(m.spinner.Tick, getTagsDiffCmd)
+}
+
+func (m tagsCreateModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		m.width = msg.Width
+		m.height = msg.Height
+		return m, nil
+
+	case tea.KeyMsg:
+		if m.state == tagsCreateStatePreview {
+			switch msg.String() {
+			case "ctrl+c", "q", "n", "N":
+				return m, tea.Quit
+			case "up", "k":
+				if m.cursor > 0 {
+					m.cursor--
+				}
+			case "down", "j":
+				if m.cursor < len(m.commits)-1 {
+					m.cursor++
+				}
+			case "y", "Y", "enter":
+				m.state = tagsCreateStateCreating
+				return m, createTagCmd(m.newTag, m.generateTagMessage())
+			case "?":
+				m.showHelp = !m.showHelp
+			}
+		}
+
+	case spinner.TickMsg:
+		var cmd tea.Cmd
+		m.spinner, cmd = m.spinner.Update(msg)
+		return m, cmd
+
+	case getTagsDiffMsg:
+		if msg.err != nil {
+			m.state = tagsCreateStateError
+			m.err = msg.err
+			return m, tea.Quit
+		}
+		m.commits = msg.commits
+		m.previousTag = msg.previousTag
+		m.state = tagsCreateStatePreview
+		return m, nil
+
+	case createTagMsg:
+		if msg.err != nil {
+			m.state = tagsCreateStateError
+			m.err = msg.err
+			return m, tea.Quit
+		}
+		m.state = tagsCreateStatePushing
+		return m, pushTagCmd(m.newTag)
+
+	case pushTagMsg:
+		if msg.err != nil {
+			// Tag was created but push failed - delete local tag and report error
+			DeleteTag(m.newTag)
+			m.state = tagsCreateStateError
+			m.err = fmt.Errorf("failed to push tag: %w", msg.err)
+			return m, tea.Quit
+		}
+		m.state = tagsCreateStateDone
+		return m, tea.Quit
+	}
+
+	return m, nil
+}
+
+func (m tagsCreateModel) generateTagMessage() string {
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("Release %s\n\n", m.newTag))
+
+	if m.previousTag != "" && m.previousTag != "(no previous tag)" {
+		sb.WriteString(fmt.Sprintf("Changes since %s:\n\n", m.previousTag))
+	} else {
+		sb.WriteString("Changes:\n\n")
+	}
+
+	for _, commit := range m.commits {
+		sb.WriteString(fmt.Sprintf("- %s\n", commit.Message))
+	}
+
+	return sb.String()
+}
+
+func (m tagsCreateModel) View() string {
+	switch m.state {
+	case tagsCreateStateLoading:
+		return fmt.Sprintf("%s Loading...", m.spinner.View())
+
+	case tagsCreateStatePreview:
+		var s strings.Builder
+
+		titleStyle := lipgloss.NewStyle().
+			Bold(true).
+			Foreground(lipgloss.Color("#7D56F4"))
+
+		s.WriteString(titleStyle.Render(fmt.Sprintf("Create tag %s", m.newTag)))
+		s.WriteString("\n\n")
+
+		// Previous tag info
+		prevStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#888888"))
+		if m.previousTag != "" && m.previousTag != "(no previous tag)" {
+			s.WriteString(prevStyle.Render(fmt.Sprintf("Previous tag: %s", m.previousTag)))
+		} else {
+			s.WriteString(prevStyle.Render("No previous tag"))
+		}
+		s.WriteString("\n\n")
+
+		// Summary
+		totalAdditions := 0
+		totalDeletions := 0
+		for _, c := range m.commits {
+			totalAdditions += c.Additions
+			totalDeletions += c.Deletions
+		}
+
+		summaryStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#888888"))
+		addStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#04B575"))
+		delStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#FF5555"))
+
+		if len(m.commits) > 0 {
+			s.WriteString(summaryStyle.Render(fmt.Sprintf("%d commits  ", len(m.commits))))
+			s.WriteString(addStyle.Render(fmt.Sprintf("+%d", totalAdditions)))
+			s.WriteString(summaryStyle.Render("  "))
+			s.WriteString(delStyle.Render(fmt.Sprintf("-%d", totalDeletions)))
+			s.WriteString("\n\n")
+
+			// Commits
+			hashStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#FFAA00"))
+			msgStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#FFFFFF"))
+			timeStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#888888"))
+			cursorStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#7D56F4")).Bold(true)
+
+			for i, commit := range m.commits {
+				cursor := "  "
+				if i == m.cursor {
+					cursor = cursorStyle.Render("→ ")
+				}
+
+				statsStr := ""
+				if commit.Additions > 0 || commit.Deletions > 0 {
+					statsStr = fmt.Sprintf(" %s %s",
+						addStyle.Render(fmt.Sprintf("+%d", commit.Additions)),
+						delStyle.Render(fmt.Sprintf("-%d", commit.Deletions)),
+					)
+				}
+
+				msg := commit.Message
+				maxMsgLen := m.width - 40
+				if maxMsgLen < 20 {
+					maxMsgLen = 20
+				}
+				if len(msg) > maxMsgLen {
+					msg = msg[:maxMsgLen-3] + "..."
+				}
+
+				s.WriteString(fmt.Sprintf("%s%s%s  %s  %s\n",
+					cursor,
+					hashStyle.Render(commit.ShortHash),
+					statsStr,
+					msgStyle.Render(msg),
+					timeStyle.Render(commit.RelativeTime),
+				))
+			}
+		} else {
+			s.WriteString(summaryStyle.Render("No new commits (tag will be created at current HEAD)"))
+			s.WriteString("\n")
+		}
+
+		s.WriteString("\n")
+		s.WriteString(highlightStyle.Render("Create and push tag? (y/n): "))
+
+		return s.String()
+
+	case tagsCreateStateCreating:
+		return fmt.Sprintf("%s Creating tag %s...", m.spinner.View(), m.newTag)
+
+	case tagsCreateStatePushing:
+		return fmt.Sprintf("%s Pushing tag %s...", m.spinner.View(), m.newTag)
+
+	case tagsCreateStateDone:
+		var s strings.Builder
+		s.WriteString(successStyle.Render(fmt.Sprintf("✓ Created and pushed tag %s", m.newTag)))
+		if m.previousTag != "" && m.previousTag != "(no previous tag)" {
+			s.WriteString("\n")
+			infoStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#888888"))
+			s.WriteString(infoStyle.Render(fmt.Sprintf("  %d commits since %s", len(m.commits), m.previousTag)))
+		}
+		return s.String()
+
+	case tagsCreateStateError:
+		return errorStyle.Render(fmt.Sprintf("✗ Error: %s", m.err))
+	}
+
+	return ""
+}
+
+func createTagCmd(tagName, message string) tea.Cmd {
+	return func() tea.Msg {
+		err := CreateAnnotatedTag(tagName, message)
+		return createTagMsg{err: err}
+	}
+}
+
+func pushTagCmd(tagName string) tea.Cmd {
+	return func() tea.Msg {
+		output, err := PushTag(tagName)
+		return pushTagMsg{output: output, err: err}
+	}
+}

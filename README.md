@@ -1,22 +1,28 @@
-# Snap
+# Snap 🚀
 
-**A better, simpler, yet powerful Git alternative** (built on Git)
+[![Go Version](https://img.shields.io/badge/Go-1.24.1+-blue.svg)](https://golang.org/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![GitHub stars](https://img.shields.io/github/stars/yourusername/snap.svg)](https://github.com/yourusername/snap/stargazers)
 
-Git is powerful, but let's be honest — it's confusing. Snap gives you the same power with commands that actually make sense.
+**The Git alternative that makes version control feel natural** ✨
 
-The name evokes the idea of taking **snapshots**, being **quick/snappy**, and the satisfying **"snap into place"** feeling when things work smoothly.
+Snap takes the power of Git and wraps it in commands that actually make sense. No more staging area confusion, cryptic flags, or remembering obscure commands. Just intuitive, conversational Git operations.
 
-## Why Snap?
+> "Git is powerful, but let's be honest — it's confusing. Snap gives you the same power with commands that read like English."
 
-- **No staging area** - the #1 confusion point in Git
-- **Conversational commands** - reads like English
-- **Smart defaults** - does the right thing 90% of the time
-- **Time-based thinking** - "when" instead of just hashes
-- **Combined operations** - one command for common workflows
+## ✨ Features
 
-## Implementation Status
+- 🎯 **No staging area** - Edit files, save changes. Simple.
+- 💬 **Conversational commands** - `snap save` instead of `git add && git commit`
+- 🤖 **AI-powered commit messages** - Let Ollama generate meaningful messages for you
+- ⏰ **Time-based navigation** - `snap goto yesterday` instead of hunting for hashes
+- 🔄 **Smart sync** - Combined push/pull with conflict detection
+- 📊 **Visual history** - Interactive commit timeline with filtering
+- 🌿 **Branch management** - Create, switch, and delete branches effortlessly
+- 🔀 **Rebase simplified** - Replay commits with clear previews
+- 🎨 **Beautiful TUI** - Modern, colorful terminal interface
 
-Snap is currently under active development. Here's what works today:
+## 📊 Status
 
 | Command | Status | Description |
 |---------|--------|-------------|
@@ -27,6 +33,9 @@ Snap is currently under active development. Here's what works today:
 | `snap stack` | ✅ Working | Visual commit history timeline |
 | `snap branch` | ✅ Working | Create/switch/delete branches with interactive UI |
 | `snap replay` | ✅ Working | Replay commits onto another branch (rebase) |
+| `snap tags` | ✅ Working | List all tags sorted by date (newest first) |
+| `snap tags diff` | ✅ Working | Show commits since the most recent tag |
+| `snap tags create` | ✅ Working | Create and push a new annotated tag |
 | `snap undo` | 🚧 Planned | Undo last commit |
 | `snap goto` | 🚧 Planned | Time travel through history |
 | `snap fork` | 🚧 Planned | Clone repository |
@@ -34,204 +43,129 @@ Snap is currently under active development. Here's what works today:
 | `snap diff` | 🚧 Planned | Show file changes |
 | `snap ignore` | 🚧 Planned | Add to .gitignore |
 
-## Core Commands
+## 🚀 Quick Start
+
+### Prerequisites
+
+- **Go** 1.24.1 or higher
+- **Git** (Snap is built on top of Git)
+- **Ollama** with Phi-4 model (optional - for AI commit messages)
+
+### Installation
+
+```bash
+# Clone and install
+git clone https://github.com/yourusername/snap.git
+cd snap
+./install.sh
+
+# Or build manually
+go build -o snap
+sudo mv snap /usr/local/bin/
+```
+
+### Setup AI Commit Messages (Optional)
+
+```bash
+# Install Ollama
+curl -fsSL https://ollama.com/install.sh | sh
+
+# Download Phi-4 model
+ollama pull phi4
+
+# Start Ollama service
+ollama serve
+```
+
+## 📖 Core Commands
 
 ### `snap init`
-Initialize a new repository in the current directory.
+Initialize a new repository.
 
 ```bash
 snap init
 ```
 
-**What it does:**
-- Creates a new Git repository
-- Checks if already initialized (prevents accidents)
-- Shows helpful next steps
-
 ### `snap changes`
-See what files have changed. Shows modified, added, and untracked files.
+Show uncommitted changes with colors.
 
 ```bash
 snap changes
 ```
 
 ### `snap save [message]`
-Commit your changes. No staging area confusion, just save what you've changed.
+Commit your changes. AI generates messages automatically, or use custom messages.
 
 ```bash
-snap save "Add user authentication"  # Use custom message
-snap save                             # AI generates message for you
+snap save                    # AI-generated message
+snap save "Add user auth"    # Custom message
 ```
 
-**Interactive options when AI generates:**
-- `y` - Accept the suggested message
-- `n` - Decline and cancel commit
-- `e` - Edit the message before committing
-
-### `snap undo`
-Undo your last save. Like `git commit --amend` but clearer.
-
-```bash
-snap undo           # Undo last save (keeps changes)
-snap undo --hard    # Completely remove last save
-snap undo 3         # Go back 3 saves
-```
-
-### `snap goto <when>`
-Time travel through your project history.
-
-```bash
-snap goto yesterday
-snap goto "before refactor"
-snap goto abc123    # Still supports hashes
-```
-
-### `snap branch [subcommand] [name]`
-Manage branches with an intuitive, interactive interface. No checkout confusion.
-
-```bash
-snap branch                  # Interactive list - navigate and switch branches
-snap branch new feature-x    # Create and switch to new branch
-snap branch switch main      # Switch to existing branch
-snap branch delete old-name  # Delete a branch
-```
-
-**Interactive mode features:**
-- Navigate with arrow keys or `j`/`k`
-- Press `Enter` to switch to selected branch
-- Press `n` to create a new branch
-- Press `d` to delete selected branch (can't delete current branch)
-- Press `?` to toggle help
-- Current branch highlighted in green with `*` marker
-- Shows upstream tracking and last commit message
-
-**Example interactive view:**
-```
-Branches
-
-  * main [origin/main] Fixed the login bug
-→   feature-login Add login form
-    hotfix-123 Quick bug fix
-
-Press ? for help
-```
+**Interactive options:** `y` (accept), `n` (cancel), `e` (edit)
 
 ### `snap sync`
-Smart push/pull combined. Figures out what you need automatically.
+Smart push/pull with conflict detection.
 
 ```bash
-snap sync        # Pull then push - sync everything
-snap sync --from # Only pull changes from remote
+snap sync        # Pull then push
+snap sync --from # Pull only
 ```
-
-**What it does:**
-- Checks for uncommitted changes (prompts you to save first)
-- Pulls latest changes from remote
-- Detects and reports merge conflicts
-- Pushes your commits to remote
-- Automatically sets upstream branch on first push
 
 ### `snap stack`
-Interactive commit history viewer. Navigate, filter, and checkout commits with ease.
+Interactive commit history viewer.
 
 ```bash
-snap stack           # Interactive commit browser
-snap stack --all     # Include all branches
-snap stack --mine    # Only your commits
-snap stack --plain   # Non-interactive output (for scripts/piping)
-snap stack README.md # History for specific file
+snap stack           # Browse commits
+snap stack --all     # All branches
+snap stack --mine    # Your commits only
+snap stack --plain   # Non-interactive
 ```
 
-**Interactive features:**
-- Navigate with arrow keys or `j`/`k`
-- Press `/` to filter commits by message, hash, or author
-- Press `Enter` to checkout a specific commit
-- Press `g`/`G` to jump to top/bottom
-- Press `c` to clear active filter
-- Press `?` to toggle help
-
-**Example view:**
-```
-Commit History
-
-→ ● 2 minutes ago Fixed the login bug
-    abc123f by John Doe
-  │
-  ● 2 hours ago Added user authentication  
-    def456a by Jane Smith
-  │
-  ● yesterday Initial project setup
-    789beef by John Doe
-
-↑/k: up  ↓/j: down  g: top  G: bottom  /: filter  c: clear filter
-Enter: checkout  ?: toggle help  q: quit
-```
-
-### `snap fork <url>`
-Clone a repository (because that's what it actually is).
+### `snap branch`
+Manage branches interactively.
 
 ```bash
-snap fork https://github.com/user/repo
+snap branch                  # Interactive list
+snap branch new feature-x    # Create & switch
+snap branch switch main      # Switch branch
+snap branch delete old-name  # Delete branch
 ```
 
 ### `snap replay <branch>`
-Replay your commits onto another branch. This is what Git calls "rebasing", but with a name that makes sense.
+Replay commits onto another branch (rebase).
 
 ```bash
-snap replay main           # Replay current branch commits onto main
-snap replay main -i        # Interactive replay (coming soon)
-```
-
-**What it does:**
-- Shows you exactly which commits will be replayed
-- Confirms before making changes
-- Handles conflicts gracefully with clear instructions
-- Prevents common mistakes (already up-to-date, same branch, etc.)
-
-**Example workflow:**
-```bash
-# You're on feature-branch with 3 new commits
 snap replay main
-
-# Output shows:
-Replay commits from 'feature-branch' onto 'main'
-
-The following 3 commit(s) will be replayed:
-
-● Add user profile page (2 hours ago)
-  abc123f
-│
-● Update navigation menu (3 hours ago)
-  def456a
-│
-● Fix login form validation (4 hours ago)
-  789beef
-
-Proceed with replay? (y/n):
 ```
 
-### `snap merge <branch>`
-Merge branches. Auto-detects conflicts and opens a clean conflict resolver.
+Shows preview and confirms before proceeding.
+
+### `snap tags`
+List all tags sorted by date (newest first).
 
 ```bash
-snap merge feature-x
+snap tags              # List all tags with details
 ```
 
-### `snap diff [file]`
-See what changed. Kept simple.
+Shows tag name, commit hash, message, and relative time.
+
+#### `snap tags diff`
+Shows commits since the most recent tag.
 
 ```bash
-snap diff           # All changes
-snap diff README.md  # Specific file
+snap tags diff
 ```
 
-### `snap ignore <pattern>`
-Add patterns to your ignore file interactively.
+Displays commit hash, message, additions/deletions, and relative time.
+
+#### `snap tags create <version>`
+Creates and pushes a new annotated tag.
 
 ```bash
-snap ignore "*.log"
-snap ignore node_modules
+snap tags create v1.2.0
 ```
+
+Shows a preview of commits since the last tag, then creates the tag with an auto-generated message and pushes it to the remote.
 
 ## Quick Start
 
@@ -278,6 +212,7 @@ Behind the scenes:
 - `snap goto` → `git checkout` with smart date/message parsing
 - `snap branch` → `git branch` + `git checkout -b` with interactive TUI
 - `snap replay` → `git rebase` with visual preview and confirmation
+- `snap tags` → `git for-each-ref refs/tags` with formatted output
 
 ## Philosophy
 
@@ -289,67 +224,39 @@ Git's complexity comes from its history and Unix philosophy. Snap reimagines ver
 4. **Visual clarity** - Clean, readable output always
 5. **Safety first** - Hard to accidentally destroy work
 
-## Coming from Git?
+## 🔄 Coming from Git?
 
 | Git Command | Snap Equivalent |
 |-------------|-----------------|
 | `git init` | `snap init` |
 | `git status` | `snap changes` |
 | `git add . && git commit -m "msg"` | `snap save "msg"` |
-| `git commit --amend` | `snap undo` |
 | `git checkout <ref>` | `snap goto <ref>` |
 | `git checkout -b branch` | `snap branch new branch` |
-| `git branch -d branch` | `snap branch delete branch` |
-| `git checkout branch` | `snap branch switch branch` |
 | `git rebase main` | `snap replay main` |
 | `git pull && git push` | `snap sync` |
-| `git clone` | `snap fork` |
 | `git log` | `snap stack` |
+| `git tag -l` | `snap tags` |
 
-## Examples
+## 🛠️ How It Works
 
-```bash
-# Start a new project
-snap init
+Snap wraps Git with intuitive commands while preserving full Git power:
 
-# Make some changes, check what changed
-snap changes
+- **No staging area** - Direct commits from working directory
+- **AI assistance** - Ollama generates conventional commit messages
+- **Visual TUIs** - Interactive interfaces for complex operations
+- **Smart defaults** - Sensible behavior without flags
+- **Safety first** - Confirmations and conflict detection
 
-# Save the changes
-snap save "Initial setup"
+## 🤝 Contributing
 
-# Oops, forgot something
-snap undo
-# ... make changes ...
-snap save "Initial setup (complete)"
+Snap is open source! Help make Git better for everyone:
 
-# Create a new feature
-snap branch new user-login
+- 🐛 [Report bugs](https://github.com/yourusername/snap/issues)
+- 💡 [Suggest features](https://github.com/yourusername/snap/issues)
+- 🛠️ [Submit PRs](https://github.com/yourusername/snap/pulls)
+- 📖 [Improve docs](https://github.com/yourusername/snap/wiki)
 
-# Save progress
-snap save "Add login form"
-snap save "Add validation"
+## 📄 License
 
-# Check what you've done
-snap stack
-
-# Sync your work with remote
-snap sync
-
-# Keep feature branch up to date with main
-snap replay main
-
-# Go back to main and merge
-snap goto main
-snap merge user-login
-
-# Push everything
-snap sync
-
-# See full project history
-snap stack --all
-```
-
-## License
-
-MIT
+MIT - See [LICENSE](LICENSE) for details

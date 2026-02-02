@@ -26,6 +26,7 @@ COMMANDS:
     stack [OPTIONS]     Show commit history as a visual timeline
     branch [OPTIONS]    Manage branches - list, create, switch, or delete
     replay <branch>     Replay commits onto another branch (rebase)
+    tags [SUBCOMMAND]   Manage tags - list, diff, or create
     help, --help, -h    Show this help message
     version, --version  Show version information
 
@@ -54,6 +55,9 @@ EXAMPLES:
     snap branch delete feature Delete 'feature' branch
     snap replay main           Replay current branch commits onto main
     snap replay main -i        Interactive replay (rebase -i)
+    snap tags                  List all tags interactively
+    snap tags diff             Show commits since last tag
+    snap tags create v1.0.0    Create and push a new tag
     snap help                  Show this help message
     snap version               Show version information
 
@@ -323,6 +327,53 @@ func main() {
 
 		// Run the TUI
 		p := tea.NewProgram(initialReplayModel(ontoBranch, interactive))
+		if _, err := p.Run(); err != nil {
+			fmt.Printf("Error: %v\n", err)
+			os.Exit(1)
+		}
+		os.Exit(0)
+
+	case "tags":
+		// Parse subcommand
+		if len(os.Args) > 2 {
+			subcommand := os.Args[2]
+			switch subcommand {
+			case "diff":
+				// Show diff since last tag
+				p := tea.NewProgram(initialTagsDiffModel())
+				if _, err := p.Run(); err != nil {
+					fmt.Printf("Error: %v\n", err)
+					os.Exit(1)
+				}
+				os.Exit(0)
+
+			case "create":
+				// Create a new tag
+				if len(os.Args) < 4 {
+					fmt.Println("Error: tag name required")
+					fmt.Println("Usage: snap tags create <version>")
+					fmt.Println("\nExample:")
+					fmt.Println("  snap tags create v1.0.0")
+					os.Exit(1)
+				}
+				tagName := os.Args[3]
+				p := tea.NewProgram(initialTagsCreateModel(tagName))
+				if _, err := p.Run(); err != nil {
+					fmt.Printf("Error: %v\n", err)
+					os.Exit(1)
+				}
+				os.Exit(0)
+
+			default:
+				fmt.Printf("Error: unknown subcommand '%s'\n", subcommand)
+				fmt.Println("\nValid subcommands: diff, create")
+				fmt.Println("Or run 'snap tags' to list all tags")
+				os.Exit(1)
+			}
+		}
+
+		// No subcommand - run the tags list TUI
+		p := tea.NewProgram(initialTagsModel())
 		if _, err := p.Run(); err != nil {
 			fmt.Printf("Error: %v\n", err)
 			os.Exit(1)
