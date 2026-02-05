@@ -20,7 +20,7 @@ Snap wraps Git in commands that actually read like English. No staging area, no 
 
 ```bash
 # install
-git clone https://github.com/yourusername/snap.git
+git clone https://github.com/jakob-fiegerl/snap.git
 cd snap && ./install.sh
 
 # or build it yourself
