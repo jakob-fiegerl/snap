@@ -101,7 +101,7 @@ Changes:
 OUTPUT ONLY ONE LINE:`, input)
 
 	reqBody := OllamaRequest{
-		Model:  "phi4",
+		Model:  "llama3.2:3b",
 		Prompt: prompt,
 		Stream: false,
 		Options: map[string]interface{}{
@@ -205,7 +205,7 @@ Git diff chunk:
 Summary:`, chunk)
 
 	reqBody := OllamaRequest{
-		Model:  "phi4",
+		Model:  "llama3.2:3b",
 		Prompt: prompt,
 		Stream: false,
 		Options: map[string]interface{}{

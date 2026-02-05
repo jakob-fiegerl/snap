@@ -30,7 +30,7 @@ go build -o snap && sudo mv snap /usr/local/bin/
 **Optional** — for AI-generated commit messages:
 
 ```bash
-ollama pull phi4
+ollama pull llama3.2:3b
 ollama serve
 ```
 
@@ -67,7 +67,7 @@ Run `snap <command> --help` for details on any command.
 
 - **Go** 1.24.1+
 - **Git**
-- **Ollama** + Phi-4 *(optional, for AI commit messages)*
+- **Ollama** + llama3.2:3b *(optional, for AI commit messages)*
 
 ## 📄 License
 

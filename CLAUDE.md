@@ -4,13 +4,13 @@ This document provides coding guidelines and conventions for AI agents working o
 
 ## Project Overview
 
-Snap is a Git wrapper written in Go that provides intuitive, conversational commands for version control. It uses Charm's Bubble Tea for TUI interactions and Ollama's Phi-4 model for AI-powered commit messages.
+Snap is a Git wrapper written in Go that provides intuitive, conversational commands for version control. It uses Charm's Bubble Tea for TUI interactions and Ollama's llama3.2:3b model for AI-powered commit messages.
 
 **Stack:**
 - Language: Go 1.24.1
 - TUI Framework: Bubble Tea (charmbracelet/bubbletea)
 - Styling: Lipgloss (charmbracelet/lipgloss)
-- AI: Ollama API with Phi-4 model
+- AI: Ollama API with llama3.2:3b model
 
 ## Build, Test, and Lint Commands
 
@@ -190,7 +190,7 @@ case "commandname":
 ## Ollama Integration
 
 - Default endpoint: `http://localhost:11434`
-- Default model: `phi4`
+- Default model: `llama3.2:3b`
 - Temperature: `0.3` for consistent commit messages
 - Always check if Ollama is running before AI operations
 - Clean up AI responses (remove prefixes, markdown artifacts)

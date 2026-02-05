@@ -601,7 +601,7 @@ func GetCommitsSinceTag(tagName string) ([]CommitWithStats, error) {
 	}
 
 	// Get commit info
-	args := []string{"log", "--pretty=format:%H|%h|%s|%an|%ar"}
+	args := []string{"log", "--no-merges", "--pretty=format:%H|%h|%s|%an|%ar"}
 	if ref != "" {
 		args = append(args, ref)
 	}
