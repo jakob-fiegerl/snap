@@ -539,3 +539,292 @@ func TestGetCommitDetails(t *testing.T) {
 		t.Errorf("Expected details to contain commit message '%s', got: %s", commits[0].Message, details)
 	}
 }
+
+func TestRemoteToHTTPS(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "GitHub SSH",
+			input:    "git@github.com:user/repo.git",
+			expected: "https://github.com/user/repo",
+		},
+		{
+			name:     "GitHub HTTPS",
+			input:    "https://github.com/user/repo.git",
+			expected: "https://github.com/user/repo",
+		},
+		{
+			name:     "GitLab SSH",
+			input:    "git@gitlab.com:user/repo.git",
+			expected: "https://gitlab.com/user/repo",
+		},
+		{
+			name:     "Bitbucket SSH",
+			input:    "git@bitbucket.org:user/repo.git",
+			expected: "https://bitbucket.org/user/repo",
+		},
+		{
+			name:     "SSH with ssh:// prefix",
+			input:    "ssh://git@github.com/user/repo.git",
+			expected: "https://github.com/user/repo",
+		},
+		{
+			name:     "HTTPS without .git suffix",
+			input:    "https://github.com/user/repo",
+			expected: "https://github.com/user/repo",
+		},
+		{
+			name:     "HTTP URL",
+			input:    "http://github.com/user/repo.git",
+			expected: "http://github.com/user/repo",
+		},
+		{
+			name:     "Unknown format",
+			input:    "ftp://example.com/repo",
+			expected: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := remoteToHTTPS(tt.input)
+			if result != tt.expected {
+				t.Errorf("remoteToHTTPS(%q) = %q, want %q", tt.input, result, tt.expected)
+			}
+		})
+	}
+}
+
+func TestGetTagDetail(t *testing.T) {
+	_, cleanup := setupTestRepo(t)
+	defer cleanup()
+
+	// Create an annotated tag
+	err := CreateAnnotatedTag("v1.0.0", "Release v1.0.0")
+	if err != nil {
+		t.Fatalf("CreateAnnotatedTag failed: %v", err)
+	}
+
+	detail, err := GetTagDetail("v1.0.0")
+	if err != nil {
+		t.Fatalf("GetTagDetail failed: %v", err)
+	}
+
+	if detail.Name != "v1.0.0" {
+		t.Errorf("Expected tag name 'v1.0.0', got '%s'", detail.Name)
+	}
+
+	if detail.Subject != "Release v1.0.0" {
+		t.Errorf("Expected subject 'Release v1.0.0', got '%s'", detail.Subject)
+	}
+
+	if detail.ShortHash == "" {
+		t.Error("Expected non-empty short hash")
+	}
+
+	if detail.TaggerName == "" {
+		t.Error("Expected non-empty tagger name")
+	}
+
+	if detail.RelativeTime == "" {
+		t.Error("Expected non-empty relative time")
+	}
+}
+
+func TestGetTagDetailNotFound(t *testing.T) {
+	_, cleanup := setupTestRepo(t)
+	defer cleanup()
+
+	_, err := GetTagDetail("nonexistent-tag")
+	if err == nil {
+		t.Error("Expected error for nonexistent tag")
+	}
+}
+
+func TestGetPreviousTag(t *testing.T) {
+	_, cleanup := setupTestRepo(t)
+	defer cleanup()
+
+	// Create first tag
+	err := CreateAnnotatedTag("v1.0.0", "Release v1.0.0")
+	if err != nil {
+		t.Fatalf("CreateAnnotatedTag failed: %v", err)
+	}
+
+	// Add a commit and create second tag
+	testFile := filepath.Join(".", "new.txt")
+	if err := os.WriteFile(testFile, []byte("new content"), 0644); err != nil {
+		t.Fatalf("Failed to create test file: %v", err)
+	}
+	exec.Command("git", "add", ".").Run()
+	exec.Command("git", "commit", "-m", "New commit").Run()
+
+	err = CreateAnnotatedTag("v2.0.0", "Release v2.0.0")
+	if err != nil {
+		t.Fatalf("CreateAnnotatedTag failed: %v", err)
+	}
+
+	// Previous tag of v2.0.0 should be v1.0.0
+	prevTag, err := GetPreviousTag("v2.0.0")
+	if err != nil {
+		t.Fatalf("GetPreviousTag failed: %v", err)
+	}
+
+	if prevTag != "v1.0.0" {
+		t.Errorf("Expected previous tag 'v1.0.0', got '%s'", prevTag)
+	}
+
+	// First tag should have no previous tag
+	prevTag, err = GetPreviousTag("v1.0.0")
+	if err != nil {
+		t.Fatalf("GetPreviousTag for first tag failed: %v", err)
+	}
+
+	if prevTag != "" {
+		t.Errorf("Expected empty previous tag for first tag, got '%s'", prevTag)
+	}
+}
+
+func TestGetCommitsBetweenTags(t *testing.T) {
+	_, cleanup := setupTestRepo(t)
+	defer cleanup()
+
+	// Create first tag
+	err := CreateAnnotatedTag("v1.0.0", "Release v1.0.0")
+	if err != nil {
+		t.Fatalf("CreateAnnotatedTag failed: %v", err)
+	}
+
+	// Add commits
+	for i := 1; i <= 3; i++ {
+		testFile := filepath.Join(".", fmt.Sprintf("file%d.txt", i))
+		if err := os.WriteFile(testFile, []byte(fmt.Sprintf("content %d", i)), 0644); err != nil {
+			t.Fatalf("Failed to create test file: %v", err)
+		}
+		exec.Command("git", "add", ".").Run()
+		exec.Command("git", "commit", "-m", fmt.Sprintf("Commit %d", i)).Run()
+	}
+
+	// Create second tag
+	err = CreateAnnotatedTag("v2.0.0", "Release v2.0.0")
+	if err != nil {
+		t.Fatalf("CreateAnnotatedTag failed: %v", err)
+	}
+
+	// Get commits between tags
+	commits, err := GetCommitsBetweenTags("v1.0.0", "v2.0.0")
+	if err != nil {
+		t.Fatalf("GetCommitsBetweenTags failed: %v", err)
+	}
+
+	if len(commits) != 3 {
+		t.Errorf("Expected 3 commits between tags, got %d", len(commits))
+	}
+
+	// Test with empty fromTag (first tag)
+	allCommits, err := GetCommitsBetweenTags("", "v1.0.0")
+	if err != nil {
+		t.Fatalf("GetCommitsBetweenTags with empty fromTag failed: %v", err)
+	}
+
+	if len(allCommits) == 0 {
+		t.Error("Expected at least one commit for first tag range")
+	}
+}
+
+func TestGetTagRangeDiffStats(t *testing.T) {
+	_, cleanup := setupTestRepo(t)
+	defer cleanup()
+
+	// Create first tag
+	err := CreateAnnotatedTag("v1.0.0", "Release v1.0.0")
+	if err != nil {
+		t.Fatalf("CreateAnnotatedTag failed: %v", err)
+	}
+
+	// Add a file
+	testFile := filepath.Join(".", "stats.txt")
+	if err := os.WriteFile(testFile, []byte("line1\nline2\nline3\n"), 0644); err != nil {
+		t.Fatalf("Failed to create test file: %v", err)
+	}
+	exec.Command("git", "add", ".").Run()
+	exec.Command("git", "commit", "-m", "Add stats file").Run()
+
+	// Create second tag
+	err = CreateAnnotatedTag("v2.0.0", "Release v2.0.0")
+	if err != nil {
+		t.Fatalf("CreateAnnotatedTag failed: %v", err)
+	}
+
+	additions, deletions, filesChanged, err := GetTagRangeDiffStats("v1.0.0", "v2.0.0")
+	if err != nil {
+		t.Fatalf("GetTagRangeDiffStats failed: %v", err)
+	}
+
+	if additions == 0 {
+		t.Error("Expected non-zero additions")
+	}
+
+	if filesChanged == 0 {
+		t.Error("Expected non-zero files changed")
+	}
+
+	// Deletions should be 0 since we only added a file
+	if deletions != 0 {
+		t.Errorf("Expected 0 deletions, got %d", deletions)
+	}
+}
+
+func TestGetTagURL(t *testing.T) {
+	_, cleanup := setupTestRepo(t)
+	defer cleanup()
+
+	tests := []struct {
+		name        string
+		remoteURL   string
+		tagName     string
+		expectedURL string
+	}{
+		{
+			name:        "GitHub",
+			remoteURL:   "git@github.com:user/repo.git",
+			tagName:     "v1.0.0",
+			expectedURL: "https://github.com/user/repo/releases/tag/v1.0.0",
+		},
+		{
+			name:        "GitLab",
+			remoteURL:   "git@gitlab.com:user/repo.git",
+			tagName:     "v2.0.0",
+			expectedURL: "https://gitlab.com/user/repo/-/tags/v2.0.0",
+		},
+		{
+			name:        "Bitbucket",
+			remoteURL:   "git@bitbucket.org:user/repo.git",
+			tagName:     "v3.0.0",
+			expectedURL: "https://bitbucket.org/user/repo/src/v3.0.0",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Set the remote URL
+			exec.Command("git", "remote", "remove", "origin").Run()
+			err := exec.Command("git", "remote", "add", "origin", tt.remoteURL).Run()
+			if err != nil {
+				t.Fatalf("Failed to set remote: %v", err)
+			}
+
+			url, err := GetTagURL(tt.tagName)
+			if err != nil {
+				t.Fatalf("GetTagURL failed: %v", err)
+			}
+
+			if url != tt.expectedURL {
+				t.Errorf("GetTagURL(%q) = %q, want %q", tt.tagName, url, tt.expectedURL)
+			}
+		})
+	}
+}

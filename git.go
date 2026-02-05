@@ -757,3 +757,227 @@ func DeleteTag(tagName string) error {
 	cmd := exec.Command("git", "tag", "-d", tagName)
 	return cmd.Run()
 }
+
+// GetRemoteURL returns the URL of the origin remote
+func GetRemoteURL() (string, error) {
+	cmd := exec.Command("git", "remote", "get-url", "origin")
+	output, err := cmd.Output()
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(output)), nil
+}
+
+// GetTagURL constructs a web URL for a tag based on the remote provider
+func GetTagURL(tagName string) (string, error) {
+	remoteURL, err := GetRemoteURL()
+	if err != nil {
+		return "", err
+	}
+
+	baseURL := remoteToHTTPS(remoteURL)
+	if baseURL == "" {
+		return "", fmt.Errorf("could not parse remote URL: %s", remoteURL)
+	}
+
+	// Determine provider from the host
+	switch {
+	case strings.Contains(baseURL, "gitlab.com") || strings.Contains(baseURL, "gitlab."):
+		return baseURL + "/-/tags/" + tagName, nil
+	case strings.Contains(baseURL, "bitbucket.org") || strings.Contains(baseURL, "bitbucket."):
+		return baseURL + "/src/" + tagName, nil
+	default:
+		// GitHub and other GitHub-compatible hosts (Gitea, Forgejo, etc.)
+		return baseURL + "/releases/tag/" + tagName, nil
+	}
+}
+
+// remoteToHTTPS converts a git remote URL (SSH or HTTPS) to a base HTTPS URL
+func remoteToHTTPS(remoteURL string) string {
+	// Remove trailing .git
+	remoteURL = strings.TrimSuffix(remoteURL, ".git")
+
+	// SSH format: git@host:user/repo
+	if strings.HasPrefix(remoteURL, "git@") {
+		remoteURL = strings.TrimPrefix(remoteURL, "git@")
+		// Replace first : with /
+		remoteURL = strings.Replace(remoteURL, ":", "/", 1)
+		return "https://" + remoteURL
+	}
+
+	// SSH format: ssh://git@host/user/repo
+	if strings.HasPrefix(remoteURL, "ssh://") {
+		remoteURL = strings.TrimPrefix(remoteURL, "ssh://")
+		// Remove user@ prefix
+		if atIdx := strings.Index(remoteURL, "@"); atIdx >= 0 {
+			remoteURL = remoteURL[atIdx+1:]
+		}
+		return "https://" + remoteURL
+	}
+
+	// Already HTTPS
+	if strings.HasPrefix(remoteURL, "https://") || strings.HasPrefix(remoteURL, "http://") {
+		return remoteURL
+	}
+
+	return ""
+}
+
+// TagDetailInfo represents detailed metadata for a single tag
+type TagDetailInfo struct {
+	Name         string
+	FullHash     string
+	ShortHash    string
+	TaggerName   string
+	TaggerEmail  string
+	Subject      string
+	Body         string
+	RelativeTime string
+	Date         string
+}
+
+// GetTagDetail returns detailed metadata for a specific tag
+func GetTagDetail(tagName string) (TagDetailInfo, error) {
+	cmd := exec.Command("git", "for-each-ref",
+		"--format=%(refname:short)|%(objectname)|%(objectname:short)|%(taggername)|%(taggeremail)|%(subject)|%(body)|%(creatordate:relative)|%(creatordate:iso)",
+		fmt.Sprintf("refs/tags/%s", tagName))
+	output, err := cmd.Output()
+	if err != nil {
+		return TagDetailInfo{}, fmt.Errorf("failed to get tag detail: %w", err)
+	}
+
+	line := strings.TrimSpace(string(output))
+	if line == "" {
+		return TagDetailInfo{}, fmt.Errorf("tag '%s' not found", tagName)
+	}
+
+	parts := strings.SplitN(line, "|", 9)
+	if len(parts) < 9 {
+		return TagDetailInfo{}, fmt.Errorf("unexpected tag format for '%s'", tagName)
+	}
+
+	return TagDetailInfo{
+		Name:         parts[0],
+		FullHash:     parts[1],
+		ShortHash:    parts[2],
+		TaggerName:   parts[3],
+		TaggerEmail:  strings.Trim(parts[4], "<>"),
+		Subject:      parts[5],
+		Body:         strings.TrimSpace(parts[6]),
+		RelativeTime: parts[7],
+		Date:         parts[8],
+	}, nil
+}
+
+// GetPreviousTag returns the tag before the given tag, or empty string if none
+func GetPreviousTag(tagName string) (string, error) {
+	cmd := exec.Command("git", "describe", "--tags", "--abbrev=0", tagName+"^")
+	output, err := cmd.Output()
+	if err != nil {
+		// No previous tag found (this is the first tag)
+		return "", nil
+	}
+	return strings.TrimSpace(string(output)), nil
+}
+
+// GetCommitsBetweenTags returns commits between two tags with stats
+func GetCommitsBetweenTags(fromTag, toTag string) ([]CommitWithStats, error) {
+	var ref string
+	if fromTag == "" {
+		// First tag - get all commits up to toTag
+		ref = toTag
+	} else {
+		ref = fromTag + ".." + toTag
+	}
+
+	args := []string{"log", "--no-merges", "--pretty=format:%H|%h|%s|%an|%ar", ref}
+
+	cmd := exec.Command("git", args...)
+	output, err := cmd.Output()
+	if err != nil {
+		return nil, err
+	}
+
+	if len(output) == 0 {
+		return []CommitWithStats{}, nil
+	}
+
+	lines := strings.Split(strings.TrimSpace(string(output)), "\n")
+	commits := make([]CommitWithStats, 0, len(lines))
+
+	for _, line := range lines {
+		if line == "" {
+			continue
+		}
+		parts := strings.SplitN(line, "|", 5)
+		if len(parts) < 5 {
+			continue
+		}
+
+		commit := CommitWithStats{
+			Hash:         parts[0],
+			ShortHash:    parts[1],
+			Message:      parts[2],
+			Author:       parts[3],
+			RelativeTime: parts[4],
+		}
+
+		// Get stats for this commit
+		statsCmd := exec.Command("git", "diff", "--shortstat", commit.Hash+"^.."+commit.Hash)
+		statsOutput, err := statsCmd.Output()
+		if err == nil {
+			parseCommitStats(string(statsOutput), &commit)
+		}
+
+		commits = append(commits, commit)
+	}
+
+	return commits, nil
+}
+
+// GetTagRangeDiffStats returns total stats between two tags
+func GetTagRangeDiffStats(fromTag, toTag string) (additions, deletions, filesChanged int, err error) {
+	var ref string
+	if fromTag == "" {
+		// Compare with empty tree
+		ref = "4b825dc642cb6eb9a060e54bf8d69288fbee4904.." + toTag
+	} else {
+		ref = fromTag + ".." + toTag
+	}
+
+	cmd := exec.Command("git", "diff", "--shortstat", ref)
+	output, err := cmd.Output()
+	if err != nil {
+		return 0, 0, 0, err
+	}
+
+	stats := strings.TrimSpace(string(output))
+	if stats == "" {
+		return 0, 0, 0, nil
+	}
+
+	// Parse files changed
+	if idx := strings.Index(stats, " file"); idx > 0 {
+		fmt.Sscanf(stats[:idx], "%d", &filesChanged)
+	}
+
+	// Parse insertions
+	if idx := strings.Index(stats, " insertion"); idx > 0 {
+		part := stats[:idx]
+		if lastComma := strings.LastIndex(part, ","); lastComma >= 0 {
+			part = part[lastComma+1:]
+		}
+		fmt.Sscanf(strings.TrimSpace(part), "%d", &additions)
+	}
+
+	// Parse deletions
+	if idx := strings.Index(stats, " deletion"); idx > 0 {
+		part := stats[:idx]
+		if lastComma := strings.LastIndex(part, ","); lastComma >= 0 {
+			part = part[lastComma+1:]
+		}
+		fmt.Sscanf(strings.TrimSpace(part), "%d", &deletions)
+	}
+
+	return additions, deletions, filesChanged, nil
+}

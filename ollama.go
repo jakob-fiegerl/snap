@@ -75,25 +75,17 @@ func GenerateCommitMessage(diff string, seed int) (string, error) {
 		input = strings.Join(summaries, "; ")
 	}
 
-	prompt := fmt.Sprintf(`You are a git commit message generator. Generate a SINGLE LINE conventional commit message.
+	prompt := fmt.Sprintf(`You are a git commit message generator. Generate a SINGLE LINE conventional commit message based on the git diff below.
 
 CRITICAL REQUIREMENTS:
 - Output EXACTLY ONE LINE ONLY
 - Format: <type>: <description>
 - Types: feat, fix, docs, style, refactor, test, chore
 - Description under 72 characters
+- Describe WHAT changed, not HOW
 - NO explanations, NO markdown, NO extra text
 - NO line breaks, NO paragraphs
-
-WRONG OUTPUTS:
-- "feat: add new feature\nThis adds..."
-- "To modify the code so that it outputs..."
-- "commit message: feat: add feature"
-
-CORRECT OUTPUTS:
-- "feat: add user authentication system"
-- "fix: resolve memory leak in cache"
-- "docs: update installation guide"
+- NO prefixes like "commit message:" or "output:"
 
 Changes:
 %s

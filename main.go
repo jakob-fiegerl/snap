@@ -145,16 +145,18 @@ Examples:
 func printTagsHelp() {
 	fmt.Println(`Usage: snap tags [SUBCOMMAND]
 
-Manage tags - list, diff, or create.
+Manage tags - list, inspect, diff, or create.
 
 Subcommands:
+  inspect <tag>       Inspect a tag (commits, stats, metadata)
   diff                Show commits since last tag
   create <version>    Create and push a new annotated tag
 
 Examples:
-  snap tags                  List all tags interactively
-  snap tags diff             Show commits since last tag
-  snap tags create v1.0.0    Create and push a new tag`)
+  snap tags                     List all tags interactively
+  snap tags inspect v1.0.0      Inspect a specific tag
+  snap tags diff                Show commits since last tag
+  snap tags create v1.0.0       Create and push a new tag`)
 }
 
 func main() {
@@ -425,6 +427,23 @@ func main() {
 		if len(os.Args) > 2 {
 			subcommand := os.Args[2]
 			switch subcommand {
+			case "inspect":
+				// Inspect a specific tag
+				if len(os.Args) < 4 {
+					fmt.Println("Error: tag name required")
+					fmt.Println("Usage: snap tags inspect <tag>")
+					fmt.Println("\nExample:")
+					fmt.Println("  snap tags inspect v1.0.0")
+					os.Exit(1)
+				}
+				tagName := os.Args[3]
+				p := tea.NewProgram(initialTagsInspectModel(tagName))
+				if _, err := p.Run(); err != nil {
+					fmt.Printf("Error: %v\n", err)
+					os.Exit(1)
+				}
+				os.Exit(0)
+
 			case "diff":
 				// Show diff since last tag
 				p := tea.NewProgram(initialTagsDiffModel())
@@ -453,7 +472,7 @@ func main() {
 
 			default:
 				fmt.Printf("Error: unknown subcommand '%s'\n", subcommand)
-				fmt.Println("\nValid subcommands: diff, create")
+				fmt.Println("\nValid subcommands: inspect, diff, create")
 				fmt.Println("Or run 'snap tags' to list all tags")
 				os.Exit(1)
 			}
@@ -461,9 +480,19 @@ func main() {
 
 		// No subcommand - run the tags list TUI
 		p := tea.NewProgram(initialTagsModel())
-		if _, err := p.Run(); err != nil {
+		finalModel, err := p.Run()
+		if err != nil {
 			fmt.Printf("Error: %v\n", err)
 			os.Exit(1)
+		}
+
+		// If a tag was selected via Enter, launch the inspect view
+		if tm, ok := finalModel.(tagsModel); ok && tm.selectedTag != "" {
+			ip := tea.NewProgram(initialTagsInspectModel(tm.selectedTag))
+			if _, err := ip.Run(); err != nil {
+				fmt.Printf("Error: %v\n", err)
+				os.Exit(1)
+			}
 		}
 		os.Exit(0)
 

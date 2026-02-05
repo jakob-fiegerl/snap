@@ -1398,6 +1398,7 @@ type tagsModel struct {
 	showHelp     bool
 	width        int
 	height       int
+	selectedTag  string
 }
 
 type getTagsMsg struct {
@@ -1502,6 +1503,12 @@ func (m tagsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.textInput.SetValue("")
 				m.filteredTags = m.tags
 				m.cursor = 0
+			case "enter":
+				tags := m.getDisplayTags()
+				if len(tags) > 0 && m.cursor < len(tags) {
+					m.selectedTag = tags[m.cursor].Name
+					return m, tea.Quit
+				}
 			case "?":
 				m.showHelp = !m.showHelp
 			}
@@ -1667,7 +1674,7 @@ func (m tagsModel) View() string {
 			if m.filterMode {
 				s.WriteString(helpStyle.Render("Type to filter • Enter: apply • Esc: cancel"))
 			} else {
-				s.WriteString(helpStyle.Render("↑/k: up  ↓/j: down  g: top  G: bottom  /: filter  c: clear  ?: help  q: quit"))
+				s.WriteString(helpStyle.Render("↑/k: up  ↓/j: down  g/G: top/bottom  Enter: inspect  /: filter  c: clear  ?: help  q: quit"))
 			}
 		} else {
 			helpStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#888888"))
@@ -1914,6 +1921,7 @@ type tagsCreateModel struct {
 	commits     []CommitWithStats
 	previousTag string
 	newTag      string
+	tagURL      string
 	err         error
 	width       int
 	height      int
@@ -2009,6 +2017,10 @@ func (m tagsCreateModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.state = tagsCreateStateError
 			m.err = fmt.Errorf("failed to push tag: %w", msg.err)
 			return m, tea.Quit
+		}
+		// Try to get the tag URL from the remote
+		if url, err := GetTagURL(m.newTag); err == nil {
+			m.tagURL = url
 		}
 		m.state = tagsCreateStateDone
 		return m, tea.Quit
@@ -2138,6 +2150,11 @@ func (m tagsCreateModel) View() string {
 			infoStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#888888"))
 			s.WriteString(infoStyle.Render(fmt.Sprintf("  %d commits since %s", len(m.commits), m.previousTag)))
 		}
+		if m.tagURL != "" {
+			s.WriteString("\n")
+			linkStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#7D56F4"))
+			s.WriteString(linkStyle.Render(fmt.Sprintf("  %s", m.tagURL)))
+		}
 		return s.String()
 
 	case tagsCreateStateError:
@@ -2158,5 +2175,274 @@ func pushTagCmd(tagName string) tea.Cmd {
 	return func() tea.Msg {
 		output, err := PushTag(tagName)
 		return pushTagMsg{output: output, err: err}
+	}
+}
+
+// Tags Inspect TUI model
+type tagsInspectState int
+
+const (
+	tagsInspectStateLoading tagsInspectState = iota
+	tagsInspectStateDisplay
+	tagsInspectStateError
+)
+
+type tagsInspectModel struct {
+	state          tagsInspectState
+	spinner        spinner.Model
+	tagName        string
+	tagDetail      TagDetailInfo
+	commits        []CommitWithStats
+	previousTag    string
+	totalAdditions int
+	totalDeletions int
+	totalFiles     int
+	cursor         int
+	err            error
+	width          int
+	height         int
+	showHelp       bool
+}
+
+type getTagInspectMsg struct {
+	tagDetail   TagDetailInfo
+	commits     []CommitWithStats
+	previousTag string
+	additions   int
+	deletions   int
+	files       int
+	err         error
+}
+
+func initialTagsInspectModel(tagName string) tagsInspectModel {
+	s := spinner.New()
+	s.Spinner = spinner.Dot
+	s.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("#7D56F4"))
+
+	return tagsInspectModel{
+		state:    tagsInspectStateLoading,
+		spinner:  s,
+		tagName:  tagName,
+		showHelp: true,
+		width:    80,
+		height:   24,
+	}
+}
+
+func (m tagsInspectModel) Init() tea.Cmd {
+	return tea.Batch(m.spinner.Tick, getTagInspectCmd(m.tagName))
+}
+
+func (m tagsInspectModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		m.width = msg.Width
+		m.height = msg.Height
+		return m, nil
+
+	case tea.KeyMsg:
+		if m.state == tagsInspectStateDisplay {
+			switch msg.String() {
+			case "ctrl+c", "q":
+				return m, tea.Quit
+			case "up", "k":
+				if m.cursor > 0 {
+					m.cursor--
+				}
+			case "down", "j":
+				if m.cursor < len(m.commits)-1 {
+					m.cursor++
+				}
+			case "g":
+				m.cursor = 0
+			case "G":
+				if len(m.commits) > 0 {
+					m.cursor = len(m.commits) - 1
+				}
+			case "?":
+				m.showHelp = !m.showHelp
+			}
+		} else {
+			switch msg.String() {
+			case "ctrl+c", "q":
+				return m, tea.Quit
+			}
+		}
+
+	case spinner.TickMsg:
+		var cmd tea.Cmd
+		m.spinner, cmd = m.spinner.Update(msg)
+		return m, cmd
+
+	case getTagInspectMsg:
+		if msg.err != nil {
+			m.state = tagsInspectStateError
+			m.err = msg.err
+			return m, tea.Quit
+		}
+		m.tagDetail = msg.tagDetail
+		m.commits = msg.commits
+		m.previousTag = msg.previousTag
+		m.totalAdditions = msg.additions
+		m.totalDeletions = msg.deletions
+		m.totalFiles = msg.files
+		m.state = tagsInspectStateDisplay
+		return m, nil
+	}
+
+	return m, nil
+}
+
+func (m tagsInspectModel) View() string {
+	switch m.state {
+	case tagsInspectStateLoading:
+		return fmt.Sprintf("%s Loading tag %s...", m.spinner.View(), m.tagName)
+
+	case tagsInspectStateDisplay:
+		var s strings.Builder
+
+		titleStyle := lipgloss.NewStyle().
+			Bold(true).
+			Foreground(lipgloss.Color("#7D56F4"))
+		hashStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#888888"))
+		dimStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#888888"))
+		addStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#04B575"))
+		delStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#FF5555"))
+		commitHashStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#FFAA00"))
+		msgStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#FFFFFF"))
+		timeStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#888888"))
+		cursorStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#7D56F4")).Bold(true)
+
+		// Header: Tag name and hash
+		s.WriteString(fmt.Sprintf("%s  %s\n",
+			titleStyle.Render("Tag: "+m.tagDetail.Name),
+			hashStyle.Render("("+m.tagDetail.ShortHash+")"),
+		))
+
+		// Tagger info
+		if m.tagDetail.TaggerName != "" {
+			s.WriteString(fmt.Sprintf("%s  %s\n",
+				dimStyle.Render("By: "+m.tagDetail.TaggerName),
+				dimStyle.Render(m.tagDetail.RelativeTime),
+			))
+		} else {
+			s.WriteString(fmt.Sprintf("%s\n",
+				dimStyle.Render(m.tagDetail.RelativeTime),
+			))
+		}
+
+		// Tag body/message
+		if m.tagDetail.Body != "" {
+			s.WriteString("\n")
+			bodyStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#FFFFFF"))
+			// Indent body lines
+			for _, line := range strings.Split(m.tagDetail.Body, "\n") {
+				s.WriteString("  " + bodyStyle.Render(line) + "\n")
+			}
+		}
+
+		s.WriteString("\n")
+
+		// Summary line
+		summaryParts := []string{
+			fmt.Sprintf("%d commits", len(m.commits)),
+		}
+		s.WriteString("  " + dimStyle.Render(summaryParts[0]))
+		if m.totalAdditions > 0 || m.totalDeletions > 0 {
+			s.WriteString("  " + addStyle.Render(fmt.Sprintf("+%d", m.totalAdditions)))
+			s.WriteString("  " + delStyle.Render(fmt.Sprintf("-%d", m.totalDeletions)))
+		}
+		if m.totalFiles > 0 {
+			s.WriteString("  " + dimStyle.Render(fmt.Sprintf("%d files", m.totalFiles)))
+		}
+		s.WriteString("\n\n")
+
+		// Commits list
+		if len(m.commits) == 0 {
+			s.WriteString("  " + dimStyle.Render("No commits in this tag range") + "\n")
+		} else {
+			for i, commit := range m.commits {
+				cursor := "  "
+				if i == m.cursor {
+					cursor = cursorStyle.Render("→ ")
+				}
+
+				// Stats
+				statsStr := ""
+				if commit.Additions > 0 || commit.Deletions > 0 {
+					statsStr = fmt.Sprintf("  %s %s",
+						addStyle.Render(fmt.Sprintf("+%d", commit.Additions)),
+						delStyle.Render(fmt.Sprintf("-%d", commit.Deletions)),
+					)
+				}
+
+				// Truncate message if needed
+				msg := commit.Message
+				maxMsgLen := m.width - 45
+				if maxMsgLen < 20 {
+					maxMsgLen = 20
+				}
+				if len(msg) > maxMsgLen {
+					msg = msg[:maxMsgLen-3] + "..."
+				}
+
+				s.WriteString(fmt.Sprintf("%s%s%s  %s  %s\n",
+					cursor,
+					commitHashStyle.Render(commit.ShortHash),
+					statsStr,
+					msgStyle.Render(msg),
+					timeStyle.Render(commit.RelativeTime),
+				))
+			}
+		}
+
+		s.WriteString("\n")
+
+		// Help
+		if m.showHelp {
+			helpStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#888888"))
+			s.WriteString(helpStyle.Render("↑/k: up  ↓/j: down  g/G: top/bottom  ?: help  q: quit"))
+		} else {
+			helpStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#888888"))
+			s.WriteString(helpStyle.Render("Press ? for help"))
+		}
+
+		return s.String()
+
+	case tagsInspectStateError:
+		return errorStyle.Render(fmt.Sprintf("✗ Error: %s", m.err))
+	}
+
+	return ""
+}
+
+func getTagInspectCmd(tagName string) tea.Cmd {
+	return func() tea.Msg {
+		// Get tag detail
+		detail, err := GetTagDetail(tagName)
+		if err != nil {
+			return getTagInspectMsg{err: err}
+		}
+
+		// Get previous tag
+		prevTag, _ := GetPreviousTag(tagName)
+
+		// Get commits between tags
+		commits, err := GetCommitsBetweenTags(prevTag, tagName)
+		if err != nil {
+			return getTagInspectMsg{err: err}
+		}
+
+		// Get aggregate stats
+		additions, deletions, files, _ := GetTagRangeDiffStats(prevTag, tagName)
+
+		return getTagInspectMsg{
+			tagDetail:   detail,
+			commits:     commits,
+			previousTag: prevTag,
+			additions:   additions,
+			deletions:   deletions,
+			files:       files,
+		}
 	}
 }
