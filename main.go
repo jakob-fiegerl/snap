@@ -14,82 +14,22 @@ const version = "1.0.0"
 func printHelp() {
 	help := `Snap - AI-Powered Git Snapshot Tool
 
-USAGE:
-    snap [COMMAND] [OPTIONS]
-    snap save [MESSAGE] [OPTIONS]
+Usage: snap <command> [options]
 
-COMMANDS:
-    init                Initialize a new repository
-    save [MESSAGE]      Save changes with AI-generated or custom commit message
-    changes             Show uncommitted changes
-    sync [--from]       Smart push/pull - sync with remote repository
-    stack [OPTIONS]     Show commit history as a visual timeline
-    branch [OPTIONS]    Manage branches - list, create, switch, or delete
-    replay <branch>     Replay commits onto another branch (rebase)
-    tags [SUBCOMMAND]   Manage tags - list, diff, or create
-    help, --help, -h    Show this help message
-    version, --version  Show version information
+Commands:
+    init              Initialize a new repository
+    save [message]    Save changes with AI-generated or custom message
+    changes           Show uncommitted changes
+    sync              Smart push/pull with remote
+    stack             Show commit history as a visual timeline
+    branch            Manage branches
+    replay <branch>   Replay commits onto another branch (rebase)
+    tags              Manage tags
 
-OPTIONS:
-    --seed <number>     Set the seed for reproducible commit messages (default: 42)
-    --message, -m       Custom commit message (alternative to positional argument)
+    help, --help      Show this help message
+    version           Show version information
 
-EXAMPLES:
-    snap                       Show this help message
-    snap init                  Start a new repository
-    snap changes               Show what files have changed
-    snap save                  Save changes with AI-generated message
-    snap save "fix: bug"       Save changes with custom message
-    snap save -m "fix: bug"    Save changes with custom message (flag style)
-    snap save --seed 123       Use a custom seed for AI generation
-    snap sync                  Push and pull changes automatically
-    snap sync --from           Only pull changes from remote
-    snap stack                 Interactive commit history viewer
-    snap stack --all           Include all branches
-    snap stack --mine          Show only your commits
-    snap stack --plain         Non-interactive mode (for piping/scripts)
-    snap stack README.md       Show history for a specific file
-    snap branch                List all branches (interactive)
-    snap branch new feature    Create and switch to 'feature' branch
-    snap branch switch main    Switch to 'main' branch
-    snap branch delete feature Delete 'feature' branch
-    snap replay main           Replay current branch commits onto main
-    snap replay main -i        Interactive replay (rebase -i)
-    snap tags                  List all tags interactively
-    snap tags diff             Show commits since last tag
-    snap tags create v1.0.0    Create and push a new tag
-    snap help                  Show this help message
-    snap version               Show version information
-
-DESCRIPTION:
-    Snap uses Ollama's Phi-4 model to automatically generate meaningful
-    conventional commit messages based on your git diff. You can also provide
-    your own commit message. 
-    
-    When AI generates a message, you can:
-        y - Accept the message
-        n - Decline and cancel
-        e - Edit the message before committing
-
-    Interactive commands (branch, stack) support:
-        Arrow keys or j/k - Navigate
-        / - Filter/search
-        Enter - Select/checkout
-        ? - Toggle help
-        q - Quit
-
-    Before using AI mode, make sure Ollama is running:
-        ollama serve
-
-REQUIREMENTS (AI mode only):
-    - Git repository
-    - Ollama running locally (http://localhost:11434)
-    - Phi-4 model installed (ollama pull phi4)
-
-KEYBOARD SHORTCUTS:
-    y/Y         Confirm and commit
-    n/N         Cancel commit
-    q/Ctrl+C    Quit application
+Run 'snap <command> --help' for more information on a command.
 `
 	fmt.Println(help)
 }
