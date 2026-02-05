@@ -98,6 +98,125 @@ func printVersion() {
 	fmt.Printf("Snap version %s\n", version)
 }
 
+func hasHelpFlag() bool {
+	for _, arg := range os.Args[2:] {
+		if arg == "--help" || arg == "-h" {
+			return true
+		}
+	}
+	return false
+}
+
+func printInitHelp() {
+	fmt.Println(`Usage: snap init
+
+Initialize a new git repository in the current directory.
+
+Example:
+  snap init`)
+}
+
+func printChangesHelp() {
+	fmt.Println(`Usage: snap changes
+
+Show uncommitted changes (staged and unstaged files).
+
+Example:
+  snap changes`)
+}
+
+func printSaveHelp() {
+	fmt.Println(`Usage: snap save [MESSAGE] [OPTIONS]
+
+Save changes with an AI-generated or custom commit message.
+
+Options:
+  --seed <number>     Set the seed for reproducible AI messages (default: 42)
+  --message, -m       Custom commit message (alternative to positional argument)
+
+Examples:
+  snap save                    Save with AI-generated message
+  snap save "fix: bug"         Save with custom message
+  snap save -m "fix: bug"      Save with custom message (flag style)
+  snap save --seed 123         Use a custom seed for AI generation`)
+}
+
+func printSyncHelp() {
+	fmt.Println(`Usage: snap sync [OPTIONS]
+
+Smart push/pull - sync with remote repository.
+
+Options:
+  --from    Only pull changes from remote (skip push)
+
+Examples:
+  snap sync          Push and pull changes automatically
+  snap sync --from   Only pull changes from remote`)
+}
+
+func printStackHelp() {
+	fmt.Println(`Usage: snap stack [FILE] [OPTIONS]
+
+Show commit history as a visual timeline.
+
+Options:
+  --all       Include all branches
+  --mine      Show only your commits
+  --plain     Non-interactive mode (for piping/scripts)
+
+Examples:
+  snap stack               Interactive commit history viewer
+  snap stack --all         Include all branches
+  snap stack --mine        Show only your commits
+  snap stack --plain       Non-interactive mode
+  snap stack README.md     Show history for a specific file`)
+}
+
+func printBranchHelp() {
+	fmt.Println(`Usage: snap branch [SUBCOMMAND] [OPTIONS]
+
+Manage branches - list, create, switch, or delete.
+
+Subcommands:
+  new, create       Create and switch to a new branch
+  switch, checkout   Switch to an existing branch
+  delete, remove     Delete a branch
+
+Examples:
+  snap branch                  List all branches (interactive)
+  snap branch new feature      Create and switch to 'feature' branch
+  snap branch switch main      Switch to 'main' branch
+  snap branch delete feature   Delete 'feature' branch`)
+}
+
+func printReplayHelp() {
+	fmt.Println(`Usage: snap replay <branch> [OPTIONS]
+
+Replay commits onto another branch (rebase).
+
+Options:
+  --interactive, -i   Interactive replay (not yet implemented)
+
+Examples:
+  snap replay main       Replay current branch commits onto main
+  snap replay main -i    Interactive replay`)
+}
+
+func printTagsHelp() {
+	fmt.Println(`Usage: snap tags [SUBCOMMAND]
+
+Manage tags - list, diff, or create.
+
+Subcommands:
+  diff                Show commits since last tag
+  create <version>    Create and push a new annotated tag
+
+Examples:
+  snap tags                  List all tags interactively
+  snap tags diff             Show commits since last tag
+  snap tags create v1.0.0    Create and push a new tag`)
+}
+
 func main() {
 	seed := 42
 
@@ -120,6 +239,10 @@ func main() {
 		os.Exit(0)
 
 	case "init":
+		if hasHelpFlag() {
+			printInitHelp()
+			os.Exit(0)
+		}
 		// Check if already a git repository
 		if IsGitRepository() {
 			fmt.Println("Error: already a git repository")
@@ -144,6 +267,10 @@ func main() {
 		os.Exit(0)
 
 	case "changes":
+		if hasHelpFlag() {
+			printChangesHelp()
+			os.Exit(0)
+		}
 		status, err := GetColoredStatus()
 		if err != nil {
 			fmt.Printf("Error: failed to get status: %v\n", err)
@@ -159,6 +286,10 @@ func main() {
 		os.Exit(0)
 
 	case "sync":
+		if hasHelpFlag() {
+			printSyncHelp()
+			os.Exit(0)
+		}
 		// Check for --from flag (pull only)
 		pullOnly := false
 		for i := 2; i < len(os.Args); i++ {
@@ -177,6 +308,10 @@ func main() {
 		os.Exit(0)
 
 	case "stack":
+		if hasHelpFlag() {
+			printStackHelp()
+			os.Exit(0)
+		}
 		// Parse flags
 		allBranches := false
 		mineOnly := false
@@ -251,6 +386,10 @@ func main() {
 		os.Exit(0)
 
 	case "branch":
+		if hasHelpFlag() {
+			printBranchHelp()
+			os.Exit(0)
+		}
 		// Parse subcommand and arguments
 		mode := "list" // Default to list mode
 		branchName := ""
@@ -298,6 +437,10 @@ func main() {
 		os.Exit(0)
 
 	case "replay":
+		if hasHelpFlag() {
+			printReplayHelp()
+			os.Exit(0)
+		}
 		// Parse arguments
 		if len(os.Args) < 3 {
 			fmt.Println("Error: target branch required")
@@ -334,6 +477,10 @@ func main() {
 		os.Exit(0)
 
 	case "tags":
+		if hasHelpFlag() {
+			printTagsHelp()
+			os.Exit(0)
+		}
 		// Parse subcommand
 		if len(os.Args) > 2 {
 			subcommand := os.Args[2]
@@ -381,6 +528,10 @@ func main() {
 		os.Exit(0)
 
 	case "save":
+		if hasHelpFlag() {
+			printSaveHelp()
+			os.Exit(0)
+		}
 		var customMessage string
 
 		// Parse save options
