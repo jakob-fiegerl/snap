@@ -2031,13 +2031,6 @@ func (m tagsCreateModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m tagsCreateModel) generateTagMessage() string {
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("Release %s\n\n", m.newTag))
-
-	if m.previousTag != "" && m.previousTag != "(no previous tag)" {
-		sb.WriteString(fmt.Sprintf("Changes since %s:\n\n", m.previousTag))
-	} else {
-		sb.WriteString("Changes:\n\n")
-	}
 
 	for _, commit := range m.commits {
 		sb.WriteString(fmt.Sprintf("- %s\n", commit.Message))
