@@ -242,7 +242,7 @@ func main() {
 		}
 
 		// Run the TUI
-		p := tea.NewProgram(initialSyncModel(pullOnly))
+		p := tea.NewProgram(initialSyncModel(pullOnly), tea.WithAltScreen())
 		if _, err := p.Run(); err != nil {
 			fmt.Printf("Error: %v\n", err)
 			os.Exit(1)
@@ -318,7 +318,7 @@ func main() {
 			}
 		}()
 
-		p := tea.NewProgram(initialStackModel(limit, allBranches, mineOnly, filePath))
+		p := tea.NewProgram(initialStackModel(limit, allBranches, mineOnly, filePath), tea.WithAltScreen())
 		if _, err := p.Run(); err != nil {
 			// If TUI fails, fall back to plain mode
 			fmt.Fprintf(os.Stderr, "Interactive mode failed: %v\n", err)
@@ -371,7 +371,7 @@ func main() {
 		}
 
 		// Run the TUI
-		p := tea.NewProgram(initialBranchModel(mode, branchName))
+		p := tea.NewProgram(initialBranchModel(mode, branchName), tea.WithAltScreen())
 		if _, err := p.Run(); err != nil {
 			fmt.Printf("Error: %v\n", err)
 			os.Exit(1)
@@ -411,7 +411,7 @@ func main() {
 		}
 
 		// Run the TUI
-		p := tea.NewProgram(initialReplayModel(ontoBranch, interactive))
+		p := tea.NewProgram(initialReplayModel(ontoBranch, interactive), tea.WithAltScreen())
 		if _, err := p.Run(); err != nil {
 			fmt.Printf("Error: %v\n", err)
 			os.Exit(1)
@@ -437,7 +437,7 @@ func main() {
 					os.Exit(1)
 				}
 				tagName := os.Args[3]
-				p := tea.NewProgram(initialTagsInspectModel(tagName))
+				p := tea.NewProgram(initialTagsInspectModel(tagName), tea.WithAltScreen())
 				if _, err := p.Run(); err != nil {
 					fmt.Printf("Error: %v\n", err)
 					os.Exit(1)
@@ -446,7 +446,7 @@ func main() {
 
 			case "diff":
 				// Show diff since last tag
-				p := tea.NewProgram(initialTagsDiffModel())
+				p := tea.NewProgram(initialTagsDiffModel(), tea.WithAltScreen())
 				if _, err := p.Run(); err != nil {
 					fmt.Printf("Error: %v\n", err)
 					os.Exit(1)
@@ -463,7 +463,7 @@ func main() {
 					os.Exit(1)
 				}
 				tagName := os.Args[3]
-				p := tea.NewProgram(initialTagsCreateModel(tagName))
+				p := tea.NewProgram(initialTagsCreateModel(tagName), tea.WithAltScreen())
 				if _, err := p.Run(); err != nil {
 					fmt.Printf("Error: %v\n", err)
 					os.Exit(1)
@@ -479,7 +479,7 @@ func main() {
 		}
 
 		// No subcommand - run the tags list TUI
-		p := tea.NewProgram(initialTagsModel())
+		p := tea.NewProgram(initialTagsModel(), tea.WithAltScreen())
 		finalModel, err := p.Run()
 		if err != nil {
 			fmt.Printf("Error: %v\n", err)
@@ -488,7 +488,7 @@ func main() {
 
 		// If a tag was selected via Enter, launch the inspect view
 		if tm, ok := finalModel.(tagsModel); ok && tm.selectedTag != "" {
-			ip := tea.NewProgram(initialTagsInspectModel(tm.selectedTag))
+			ip := tea.NewProgram(initialTagsInspectModel(tm.selectedTag), tea.WithAltScreen())
 			if _, err := ip.Run(); err != nil {
 				fmt.Printf("Error: %v\n", err)
 				os.Exit(1)
@@ -531,7 +531,7 @@ func main() {
 			}
 		}
 
-		p := tea.NewProgram(initialModelWithMessage(seed, customMessage))
+		p := tea.NewProgram(initialModelWithMessage(seed, customMessage), tea.WithAltScreen())
 		if _, err := p.Run(); err != nil {
 			fmt.Printf("Error: %v\n", err)
 			os.Exit(1)

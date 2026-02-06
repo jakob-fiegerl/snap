@@ -7,6 +7,7 @@ import (
 
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textinput"
+	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
@@ -403,10 +404,14 @@ type branchModel struct {
 	cursor     int
 	textInput  textinput.Model
 	spinner    spinner.Model
+	viewport   viewport.Model
 	err        error
 	mode       string // "list", "new", "switch", "delete"
 	branchName string
 	showHelp   bool
+	width      int
+	height     int
+	ready      bool
 }
 
 type getBranchesMsg struct {
@@ -444,6 +449,9 @@ func initialBranchModel(mode string, branchName string) branchModel {
 		mode:       mode,
 		branchName: branchName,
 		showHelp:   mode == "list",
+		width:      80,
+		height:     24,
+		ready:      false,
 	}
 }
 
@@ -453,6 +461,19 @@ func (m branchModel) Init() tea.Cmd {
 
 func (m branchModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		m.width = msg.Width
+		m.height = msg.Height
+		if !m.ready {
+			m.viewport = viewport.New(msg.Width, msg.Height-6) // Leave space for header and footer
+			m.viewport.YPosition = 0
+			m.ready = true
+		} else {
+			m.viewport.Width = msg.Width
+			m.viewport.Height = msg.Height - 6
+		}
+		return m, nil
+
 	case tea.KeyMsg:
 		// Handle text input in creating mode
 		if m.state == branchStateCreating && m.mode == "new" {
@@ -593,14 +614,11 @@ func (m branchModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m branchModel) View() string {
 	switch m.state {
 	case branchStateList:
-		var s strings.Builder
+		if !m.ready {
+			return "Loading..."
+		}
 
-		titleStyle := lipgloss.NewStyle().
-			Bold(true).
-			Foreground(lipgloss.Color("#7D56F4"))
-
-		s.WriteString(titleStyle.Render("Branches"))
-		s.WriteString("\n\n")
+		var content strings.Builder
 
 		currentStyle := lipgloss.NewStyle().
 			Foreground(lipgloss.Color("#04B575")).
@@ -629,30 +647,60 @@ func (m branchModel) View() string {
 				branchStyle = currentStyle
 			}
 
-			s.WriteString(fmt.Sprintf("%s%s %s",
+			content.WriteString(fmt.Sprintf("%s%s %s",
 				cursor,
 				branchMark,
 				branchStyle.Render(branch.Name),
 			))
 
 			if branch.Upstream != "" {
-				s.WriteString(fmt.Sprintf(" %s", dimStyle.Render(fmt.Sprintf("[%s]", branch.Upstream))))
+				content.WriteString(fmt.Sprintf(" %s", dimStyle.Render(fmt.Sprintf("[%s]", branch.Upstream))))
 			}
 
 			if branch.LastCommit != "" {
-				s.WriteString(fmt.Sprintf(" %s", dimStyle.Render(branch.LastCommit)))
+				content.WriteString(fmt.Sprintf(" %s", dimStyle.Render(branch.LastCommit)))
 			}
 
-			s.WriteString("\n")
+			content.WriteString("\n")
 		}
 
+		m.viewport.SetContent(content.String())
+
+		// Auto-scroll to keep cursor visible
+		lineHeight := 1
+		cursorLine := m.cursor * lineHeight
+		if cursorLine < m.viewport.YOffset {
+			m.viewport.YOffset = cursorLine
+		} else if cursorLine >= m.viewport.YOffset+m.viewport.Height {
+			m.viewport.YOffset = cursorLine - m.viewport.Height + 1
+		}
+
+		// Build final view with header and footer
+		var s strings.Builder
+		titleStyle := lipgloss.NewStyle().
+			Bold(true).
+			Foreground(lipgloss.Color("#7D56F4")).
+			PaddingLeft(2)
+
+		s.WriteString(titleStyle.Render("Branches"))
+		s.WriteString("\n\n")
+
+		// Add padding to viewport content
+		viewportStyle := lipgloss.NewStyle().
+			PaddingLeft(2).
+			PaddingRight(2)
+		s.WriteString(viewportStyle.Render(m.viewport.View()))
+		s.WriteString("\n")
+
 		if m.showHelp {
-			s.WriteString("\n")
-			helpStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#888888"))
+			helpStyle := lipgloss.NewStyle().
+				Foreground(lipgloss.Color("#888888")).
+				PaddingLeft(2)
 			s.WriteString(helpStyle.Render("↑/k: up  ↓/j: down  Enter: switch  n: new branch  d: delete  ?: help  q: quit"))
 		} else {
-			s.WriteString("\n")
-			helpStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#888888"))
+			helpStyle := lipgloss.NewStyle().
+				Foreground(lipgloss.Color("#888888")).
+				PaddingLeft(2)
 			s.WriteString(helpStyle.Render("Press ? for help"))
 		}
 
@@ -882,35 +930,42 @@ func (m replayModel) View() string {
 
 		titleStyle := lipgloss.NewStyle().
 			Bold(true).
-			Foreground(lipgloss.Color("#7D56F4"))
+			Foreground(lipgloss.Color("#7D56F4")).
+			PaddingLeft(2)
 
 		s.WriteString(titleStyle.Render(fmt.Sprintf("Replay commits from '%s' onto '%s'", m.currentBranch, m.ontoBranch)))
 		s.WriteString("\n\n")
 
-		infoStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#888888"))
+		infoStyle := lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#888888")).
+			PaddingLeft(2)
 		s.WriteString(infoStyle.Render(fmt.Sprintf("The following %d commit(s) will be replayed:", len(m.commits))))
 		s.WriteString("\n\n")
 
 		commitStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#7D56F4")).Bold(true)
 		hashStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#888888"))
 		timeStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#888888"))
+		contentStyle := lipgloss.NewStyle().PaddingLeft(2)
 
 		// Show commits in reverse order (oldest first, as they'll be applied)
+		var content strings.Builder
 		for i := len(m.commits) - 1; i >= 0; i-- {
 			commit := m.commits[i]
-			s.WriteString(fmt.Sprintf("%s %s %s\n",
+			content.WriteString(fmt.Sprintf("%s %s %s\n",
 				commitStyle.Render("●"),
 				commit.Message,
 				timeStyle.Render(fmt.Sprintf("(%s)", commit.RelativeTime)),
 			))
-			s.WriteString(fmt.Sprintf("  %s\n", hashStyle.Render(commit.ShortHash)))
+			content.WriteString(fmt.Sprintf("  %s\n", hashStyle.Render(commit.ShortHash)))
 			if i > 0 {
-				s.WriteString(commitStyle.Render("│") + "\n")
+				content.WriteString(commitStyle.Render("│") + "\n")
 			}
 		}
+		s.WriteString(contentStyle.Render(content.String()))
 
 		s.WriteString("\n")
-		s.WriteString(highlightStyle.Render("Proceed with replay? (y/n): "))
+		promptStyle := lipgloss.NewStyle().PaddingLeft(2)
+		s.WriteString(promptStyle.Render(highlightStyle.Render("Proceed with replay? (y/n): ")))
 
 		return s.String()
 
@@ -995,6 +1050,7 @@ type stackModel struct {
 	state           stackState
 	spinner         spinner.Model
 	textInput       textinput.Model
+	viewport        viewport.Model
 	commits         []CommitInfo
 	filteredCommits []CommitInfo
 	cursor          int
@@ -1008,6 +1064,9 @@ type stackModel struct {
 	filterQuery     string
 	showHelp        bool
 	selectedCommit  *CommitInfo
+	width           int
+	height          int
+	ready           bool
 }
 
 type getCommitsMsg struct {
@@ -1057,6 +1116,9 @@ func initialStackModel(limit int, allBranches bool, mineOnly bool, filePath stri
 		filteredCommits: []CommitInfo{},
 		filterQuery:     "",
 		filterMode:      false,
+		width:           80,
+		height:          24,
+		ready:           false,
 	}
 }
 
@@ -1066,6 +1128,19 @@ func (m stackModel) Init() tea.Cmd {
 
 func (m stackModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		m.width = msg.Width
+		m.height = msg.Height
+		if !m.ready {
+			m.viewport = viewport.New(msg.Width, msg.Height-10) // Leave space for header, filter, and footer
+			m.viewport.YPosition = 0
+			m.ready = true
+		} else {
+			m.viewport.Width = msg.Width
+			m.viewport.Height = msg.Height - 10
+		}
+		return m, nil
+
 	case tea.KeyMsg:
 		// Handle list navigation and filter mode toggle
 		if m.state == stackStateList {
@@ -1226,11 +1301,75 @@ func (m stackModel) View() string {
 		return fmt.Sprintf("%s Loading commits...", m.spinner.View())
 
 	case stackStateList:
-		var s strings.Builder
+		if !m.ready {
+			return "Loading..."
+		}
 
+		commits := m.getDisplayCommits()
+
+		var content strings.Builder
+
+		if len(commits) == 0 {
+			content.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("#888888")).Render("No commits match filter"))
+			content.WriteString("\n")
+		} else {
+			commitStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#7D56F4")).Bold(true)
+			timeStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#888888"))
+			hashStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#888888"))
+			authorStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#888888"))
+			cursorStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#7D56F4")).Bold(true)
+			pipeStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#7D56F4"))
+
+			for i, commit := range commits {
+				cursor := "  "
+				if i == m.cursor {
+					cursor = cursorStyle.Render("→ ")
+				}
+
+				// Show bullet, time and message
+				content.WriteString(fmt.Sprintf("%s%s %s %s\n",
+					cursor,
+					commitStyle.Render("●"),
+					timeStyle.Render(commit.RelativeTime),
+					commit.Message,
+				))
+
+				// Show hash and author
+				content.WriteString(fmt.Sprintf("   %s",
+					hashStyle.Render(commit.ShortHash),
+				))
+
+				if !m.mineOnly {
+					content.WriteString(fmt.Sprintf(" %s",
+						authorStyle.Render(fmt.Sprintf("by %s", commit.Author)),
+					))
+				}
+				content.WriteString("\n")
+
+				// Show pipe between commits (except for last one)
+				if i < len(commits)-1 {
+					content.WriteString("  " + pipeStyle.Render("│") + "\n")
+				}
+			}
+		}
+
+		m.viewport.SetContent(content.String())
+
+		// Auto-scroll to keep cursor visible (each commit takes 3 lines with pipe)
+		lineHeight := 3
+		cursorLine := m.cursor * lineHeight
+		if cursorLine < m.viewport.YOffset {
+			m.viewport.YOffset = cursorLine
+		} else if cursorLine >= m.viewport.YOffset+m.viewport.Height {
+			m.viewport.YOffset = cursorLine - m.viewport.Height + lineHeight
+		}
+
+		// Build final view with header, filter bar, viewport, and footer
+		var s strings.Builder
 		titleStyle := lipgloss.NewStyle().
 			Bold(true).
-			Foreground(lipgloss.Color("#7D56F4"))
+			Foreground(lipgloss.Color("#7D56F4")).
+			PaddingLeft(2)
 
 		title := "Commit History"
 		if m.allBranches {
@@ -1250,68 +1389,32 @@ func (m stackModel) View() string {
 		if m.filterMode {
 			filterLabelStyle := lipgloss.NewStyle().
 				Foreground(lipgloss.Color("#7D56F4")).
-				Bold(true)
+				Bold(true).
+				PaddingLeft(2)
 			s.WriteString(filterLabelStyle.Render("🔍 Filter: "))
 			s.WriteString(m.textInput.View())
 			s.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("#888888")).Render(" (Esc/Ctrl+C/q to cancel)"))
 			s.WriteString("\n\n")
 		} else if m.filterQuery != "" {
-			filterStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#888888"))
+			filterStyle := lipgloss.NewStyle().
+				Foreground(lipgloss.Color("#888888")).
+				PaddingLeft(2)
 			s.WriteString(filterStyle.Render(fmt.Sprintf("🔍 Active filter: %s (press 'c' to clear)", m.filterQuery)))
 			s.WriteString("\n\n")
 		}
 
-		commits := m.getDisplayCommits()
-
-		if len(commits) == 0 {
-			s.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("#888888")).Render("No commits match filter"))
-			s.WriteString("\n")
-		} else {
-			commitStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#7D56F4")).Bold(true)
-			timeStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#888888"))
-			hashStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#888888"))
-			authorStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#888888"))
-			cursorStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#7D56F4")).Bold(true)
-			pipeStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#7D56F4"))
-
-			for i, commit := range commits {
-				cursor := "  "
-				if i == m.cursor {
-					cursor = cursorStyle.Render("→ ")
-				}
-
-				// Show bullet, time and message
-				s.WriteString(fmt.Sprintf("%s%s %s %s\n",
-					cursor,
-					commitStyle.Render("●"),
-					timeStyle.Render(commit.RelativeTime),
-					commit.Message,
-				))
-
-				// Show hash and author
-				s.WriteString(fmt.Sprintf("   %s",
-					hashStyle.Render(commit.ShortHash),
-				))
-
-				if !m.mineOnly {
-					s.WriteString(fmt.Sprintf(" %s",
-						authorStyle.Render(fmt.Sprintf("by %s", commit.Author)),
-					))
-				}
-				s.WriteString("\n")
-
-				// Show pipe between commits (except for last one)
-				if i < len(commits)-1 {
-					s.WriteString("  " + pipeStyle.Render("│") + "\n")
-				}
-			}
-		}
-
+		// Add padding to viewport content
+		viewportStyle := lipgloss.NewStyle().
+			PaddingLeft(2).
+			PaddingRight(2)
+		s.WriteString(viewportStyle.Render(m.viewport.View()))
 		s.WriteString("\n")
 
 		// Show help
 		if m.showHelp {
-			helpStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#888888"))
+			helpStyle := lipgloss.NewStyle().
+				Foreground(lipgloss.Color("#888888")).
+				PaddingLeft(2)
 			if m.filterMode {
 				s.WriteString(helpStyle.Render("Type to filter • Enter: apply • Esc/Ctrl+C/q: cancel"))
 			} else {
@@ -1320,7 +1423,9 @@ func (m stackModel) View() string {
 				s.WriteString(helpStyle.Render("Enter: checkout  ?: toggle help  q: quit"))
 			}
 		} else {
-			helpStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#888888"))
+			helpStyle := lipgloss.NewStyle().
+				Foreground(lipgloss.Color("#888888")).
+				PaddingLeft(2)
 			s.WriteString(helpStyle.Render("Press ? for help"))
 		}
 
@@ -1389,6 +1494,7 @@ type tagsModel struct {
 	state        tagsState
 	spinner      spinner.Model
 	textInput    textinput.Model
+	viewport     viewport.Model
 	tags         []TagInfo
 	filteredTags []TagInfo
 	cursor       int
@@ -1399,6 +1505,7 @@ type tagsModel struct {
 	width        int
 	height       int
 	selectedTag  string
+	ready        bool
 }
 
 type getTagsMsg struct {
@@ -1431,6 +1538,7 @@ func initialTagsModel() tagsModel {
 		filterMode:   false,
 		width:        80, // default, will be updated by WindowSizeMsg
 		height:       24,
+		ready:        false,
 	}
 }
 
@@ -1444,6 +1552,14 @@ func (m tagsModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = msg.Width
 		m.height = msg.Height
 		m.textInput.Width = msg.Width - 20
+		if !m.ready {
+			m.viewport = viewport.New(msg.Width, msg.Height-8) // Leave space for header, filter bar, and footer
+			m.viewport.YPosition = 0
+			m.ready = true
+		} else {
+			m.viewport.Width = msg.Width
+			m.viewport.Height = msg.Height - 8
+		}
 		return m, nil
 
 	case tea.KeyMsg:
@@ -1578,35 +1694,15 @@ func (m tagsModel) View() string {
 		return fmt.Sprintf("%s Loading tags...", m.spinner.View())
 
 	case tagsStateList:
-		var s strings.Builder
-
-		titleStyle := lipgloss.NewStyle().
-			Bold(true).
-			Foreground(lipgloss.Color("#7D56F4"))
-
-		s.WriteString(titleStyle.Render("Tags"))
-		s.WriteString("\n\n")
-
-		// Show filter bar
-		if m.filterMode {
-			filterLabelStyle := lipgloss.NewStyle().
-				Foreground(lipgloss.Color("#7D56F4")).
-				Bold(true)
-			s.WriteString(filterLabelStyle.Render("Filter: "))
-			s.WriteString(m.textInput.View())
-			s.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("#888888")).Render(" (Esc to cancel)"))
-			s.WriteString("\n\n")
-		} else if m.filterQuery != "" {
-			filterStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#888888"))
-			s.WriteString(filterStyle.Render(fmt.Sprintf("Filter: %s (press 'c' to clear)", m.filterQuery)))
-			s.WriteString("\n\n")
+		if !m.ready {
+			return "Loading..."
 		}
 
+		var content strings.Builder
 		tags := m.getDisplayTags()
 
 		if len(tags) == 0 {
-			s.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("#888888")).Render("No tags match filter"))
-			s.WriteString("\n")
+			content.WriteString("No tags match filter")
 		} else {
 			tagStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#04B575")).Bold(true)
 			hashStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#888888"))
@@ -1657,27 +1753,75 @@ func (m tagsModel) View() string {
 					line += "  " + msgStyle.Render(msg)
 				}
 
-				s.WriteString(line)
-				s.WriteString("\n")
+				content.WriteString(line)
+				content.WriteString("\n")
 
 				if i < len(tags)-1 {
-					s.WriteString("\n")
+					content.WriteString("\n")
 				}
 			}
 		}
 
+		m.viewport.SetContent(content.String())
+
+		// Auto-scroll to keep cursor visible (each tag takes 2 lines with spacing)
+		lineHeight := 2
+		cursorLine := m.cursor * lineHeight
+		if cursorLine < m.viewport.YOffset {
+			m.viewport.YOffset = cursorLine
+		} else if cursorLine >= m.viewport.YOffset+m.viewport.Height {
+			m.viewport.YOffset = cursorLine - m.viewport.Height + lineHeight
+		}
+
+		// Build final view with header, filter bar, viewport, and footer
+		var s strings.Builder
+		titleStyle := lipgloss.NewStyle().
+			Bold(true).
+			Foreground(lipgloss.Color("#7D56F4")).
+			PaddingLeft(2)
+
+		s.WriteString(titleStyle.Render("Tags"))
+		s.WriteString("\n\n")
+
+		// Show filter bar
+		if m.filterMode {
+			filterLabelStyle := lipgloss.NewStyle().
+				Foreground(lipgloss.Color("#7D56F4")).
+				Bold(true).
+				PaddingLeft(2)
+			s.WriteString(filterLabelStyle.Render("Filter: "))
+			s.WriteString(m.textInput.View())
+			s.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("#888888")).Render(" (Esc to cancel)"))
+			s.WriteString("\n\n")
+		} else if m.filterQuery != "" {
+			filterStyle := lipgloss.NewStyle().
+				Foreground(lipgloss.Color("#888888")).
+				PaddingLeft(2)
+			s.WriteString(filterStyle.Render(fmt.Sprintf("Filter: %s (press 'c' to clear)", m.filterQuery)))
+			s.WriteString("\n\n")
+		}
+
+		// Add padding to viewport content
+		viewportStyle := lipgloss.NewStyle().
+			PaddingLeft(2).
+			PaddingRight(2)
+		s.WriteString(viewportStyle.Render(m.viewport.View()))
 		s.WriteString("\n")
 
 		// Show help
 		if m.showHelp {
-			helpStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#888888"))
+			helpStyle := lipgloss.NewStyle().
+				Foreground(lipgloss.Color("#888888")).
+				PaddingLeft(2)
 			if m.filterMode {
 				s.WriteString(helpStyle.Render("Type to filter • Enter: apply • Esc: cancel"))
 			} else {
 				s.WriteString(helpStyle.Render("↑/k: up  ↓/j: down  g/G: top/bottom  Enter: inspect  /: filter  c: clear  ?: help  q: quit"))
 			}
 		} else {
-			helpStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#888888"))
+			helpStyle := lipgloss.NewStyle().
+				Foreground(lipgloss.Color("#888888")).
+				PaddingLeft(2)
 			s.WriteString(helpStyle.Render("Press ? for help"))
 		}
 
@@ -1707,6 +1851,7 @@ const (
 type tagsDiffModel struct {
 	state       tagsDiffState
 	spinner     spinner.Model
+	viewport    viewport.Model
 	commits     []CommitWithStats
 	previousTag string
 	err         error
@@ -1714,6 +1859,7 @@ type tagsDiffModel struct {
 	height      int
 	cursor      int
 	showHelp    bool
+	ready       bool
 }
 
 type getTagsDiffMsg struct {
@@ -1733,6 +1879,7 @@ func initialTagsDiffModel() tagsDiffModel {
 		showHelp: true,
 		width:    80,
 		height:   24,
+		ready:    false,
 	}
 }
 
@@ -1745,6 +1892,14 @@ func (m tagsDiffModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
+		if !m.ready {
+			m.viewport = viewport.New(msg.Width, msg.Height-8) // Leave space for header and footer
+			m.viewport.YPosition = 0
+			m.ready = true
+		} else {
+			m.viewport.Width = msg.Width
+			m.viewport.Height = msg.Height - 8
+		}
 		return m, nil
 
 	case tea.KeyMsg:
@@ -1800,39 +1955,19 @@ func (m tagsDiffModel) View() string {
 		return fmt.Sprintf("%s Loading diff...", m.spinner.View())
 
 	case tagsDiffStateList:
-		var s strings.Builder
-
-		titleStyle := lipgloss.NewStyle().
-			Bold(true).
-			Foreground(lipgloss.Color("#7D56F4"))
-
-		s.WriteString(titleStyle.Render("Changes since " + m.previousTag))
-		s.WriteString("\n\n")
-
-		// Summary
-		totalAdditions := 0
-		totalDeletions := 0
-		for _, c := range m.commits {
-			totalAdditions += c.Additions
-			totalDeletions += c.Deletions
+		if !m.ready {
+			return "Loading..."
 		}
 
-		summaryStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#888888"))
-		addStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#04B575"))
-		delStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#FF5555"))
-
-		s.WriteString(summaryStyle.Render(fmt.Sprintf("%d commits  ", len(m.commits))))
-		s.WriteString(addStyle.Render(fmt.Sprintf("+%d", totalAdditions)))
-		s.WriteString(summaryStyle.Render("  "))
-		s.WriteString(delStyle.Render(fmt.Sprintf("-%d", totalDeletions)))
-		s.WriteString("\n\n")
-
-		// Commits
+		// Build commits content for viewport
 		hashStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#FFAA00"))
 		msgStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#FFFFFF"))
 		timeStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#888888"))
 		cursorStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#7D56F4")).Bold(true)
+		addStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#04B575"))
+		delStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#FF5555"))
 
+		var content strings.Builder
 		for i, commit := range m.commits {
 			cursor := "  "
 			if i == m.cursor {
@@ -1858,7 +1993,7 @@ func (m tagsDiffModel) View() string {
 				msg = msg[:maxMsgLen-3] + "..."
 			}
 
-			s.WriteString(fmt.Sprintf("%s%s%s  %s  %s\n",
+			content.WriteString(fmt.Sprintf("%s%s%s  %s  %s\n",
 				cursor,
 				hashStyle.Render(commit.ShortHash),
 				statsStr,
@@ -1867,13 +2002,62 @@ func (m tagsDiffModel) View() string {
 			))
 		}
 
+		m.viewport.SetContent(content.String())
+
+		// Auto-scroll to keep cursor visible
+		lineHeight := 1
+		cursorLine := m.cursor * lineHeight
+		if cursorLine < m.viewport.YOffset {
+			m.viewport.YOffset = cursorLine
+		} else if cursorLine >= m.viewport.YOffset+m.viewport.Height {
+			m.viewport.YOffset = cursorLine - m.viewport.Height + 1
+		}
+
+		// Build final view
+		var s strings.Builder
+
+		titleStyle := lipgloss.NewStyle().
+			Bold(true).
+			Foreground(lipgloss.Color("#7D56F4")).
+			PaddingLeft(2)
+
+		s.WriteString(titleStyle.Render("Changes since " + m.previousTag))
+		s.WriteString("\n\n")
+
+		// Summary
+		totalAdditions := 0
+		totalDeletions := 0
+		for _, c := range m.commits {
+			totalAdditions += c.Additions
+			totalDeletions += c.Deletions
+		}
+
+		summaryStyle := lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#888888")).
+			PaddingLeft(2)
+
+		s.WriteString(summaryStyle.Render(fmt.Sprintf("%d commits  ", len(m.commits))))
+		s.WriteString(addStyle.Render(fmt.Sprintf("+%d", totalAdditions)))
+		s.WriteString(summaryStyle.Render("  "))
+		s.WriteString(delStyle.Render(fmt.Sprintf("-%d", totalDeletions)))
+		s.WriteString("\n\n")
+
+		// Add viewport with padding
+		viewportStyle := lipgloss.NewStyle().
+			PaddingLeft(2).
+			PaddingRight(2)
+		s.WriteString(viewportStyle.Render(m.viewport.View()))
 		s.WriteString("\n")
 
 		if m.showHelp {
-			helpStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#888888"))
+			helpStyle := lipgloss.NewStyle().
+				Foreground(lipgloss.Color("#888888")).
+				PaddingLeft(2)
 			s.WriteString(helpStyle.Render("↑/k: up  ↓/j: down  g: top  G: bottom  ?: help  q: quit"))
 		} else {
-			helpStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#888888"))
+			helpStyle := lipgloss.NewStyle().
+				Foreground(lipgloss.Color("#888888")).
+				PaddingLeft(2)
 			s.WriteString(helpStyle.Render("Press ? for help"))
 		}
 
@@ -1918,6 +2102,7 @@ const (
 type tagsCreateModel struct {
 	state       tagsCreateState
 	spinner     spinner.Model
+	viewport    viewport.Model
 	commits     []CommitWithStats
 	previousTag string
 	newTag      string
@@ -1927,6 +2112,7 @@ type tagsCreateModel struct {
 	height      int
 	cursor      int
 	showHelp    bool
+	ready       bool
 }
 
 type createTagMsg struct {
@@ -1950,6 +2136,7 @@ func initialTagsCreateModel(tagName string) tagsCreateModel {
 		showHelp: true,
 		width:    80,
 		height:   24,
+		ready:    false,
 	}
 }
 
@@ -1962,6 +2149,14 @@ func (m tagsCreateModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
+		if !m.ready {
+			m.viewport = viewport.New(msg.Width, msg.Height-10) // Leave space for header, summary, and footer
+			m.viewport.YPosition = 0
+			m.ready = true
+		} else {
+			m.viewport.Width = msg.Width
+			m.viewport.Height = msg.Height - 10
+		}
 		return m, nil
 
 	case tea.KeyMsg:
@@ -2049,13 +2244,16 @@ func (m tagsCreateModel) View() string {
 
 		titleStyle := lipgloss.NewStyle().
 			Bold(true).
-			Foreground(lipgloss.Color("#7D56F4"))
+			Foreground(lipgloss.Color("#7D56F4")).
+			PaddingLeft(2)
 
 		s.WriteString(titleStyle.Render(fmt.Sprintf("Create tag %s", m.newTag)))
 		s.WriteString("\n\n")
 
 		// Previous tag info
-		prevStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#888888"))
+		prevStyle := lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#888888")).
+			PaddingLeft(2)
 		if m.previousTag != "" && m.previousTag != "(no previous tag)" {
 			s.WriteString(prevStyle.Render(fmt.Sprintf("Previous tag: %s", m.previousTag)))
 		} else {
@@ -2071,7 +2269,9 @@ func (m tagsCreateModel) View() string {
 			totalDeletions += c.Deletions
 		}
 
-		summaryStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#888888"))
+		summaryStyle := lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#888888")).
+			PaddingLeft(2)
 		addStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#04B575"))
 		delStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#FF5555"))
 
@@ -2087,7 +2287,9 @@ func (m tagsCreateModel) View() string {
 			msgStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#FFFFFF"))
 			timeStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#888888"))
 			cursorStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#7D56F4")).Bold(true)
+			contentStyle := lipgloss.NewStyle().PaddingLeft(2).PaddingRight(2)
 
+			var content strings.Builder
 			for i, commit := range m.commits {
 				cursor := "  "
 				if i == m.cursor {
@@ -2111,7 +2313,7 @@ func (m tagsCreateModel) View() string {
 					msg = msg[:maxMsgLen-3] + "..."
 				}
 
-				s.WriteString(fmt.Sprintf("%s%s%s  %s  %s\n",
+				content.WriteString(fmt.Sprintf("%s%s%s  %s  %s\n",
 					cursor,
 					hashStyle.Render(commit.ShortHash),
 					statsStr,
@@ -2119,13 +2321,15 @@ func (m tagsCreateModel) View() string {
 					timeStyle.Render(commit.RelativeTime),
 				))
 			}
+			s.WriteString(contentStyle.Render(content.String()))
 		} else {
 			s.WriteString(summaryStyle.Render("No new commits (tag will be created at current HEAD)"))
 			s.WriteString("\n")
 		}
 
 		s.WriteString("\n")
-		s.WriteString(highlightStyle.Render("Create and push tag? (y/n): "))
+		promptStyle := lipgloss.NewStyle().PaddingLeft(2)
+		s.WriteString(promptStyle.Render(highlightStyle.Render("Create and push tag? (y/n): ")))
 
 		return s.String()
 
@@ -2183,6 +2387,7 @@ const (
 type tagsInspectModel struct {
 	state          tagsInspectState
 	spinner        spinner.Model
+	viewport       viewport.Model
 	tagName        string
 	tagDetail      TagDetailInfo
 	commits        []CommitWithStats
@@ -2195,6 +2400,7 @@ type tagsInspectModel struct {
 	width          int
 	height         int
 	showHelp       bool
+	ready          bool
 }
 
 type getTagInspectMsg struct {
@@ -2219,6 +2425,7 @@ func initialTagsInspectModel(tagName string) tagsInspectModel {
 		showHelp: true,
 		width:    80,
 		height:   24,
+		ready:    false,
 	}
 }
 
@@ -2231,6 +2438,14 @@ func (m tagsInspectModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
+		if !m.ready {
+			m.viewport = viewport.New(msg.Width, msg.Height-12) // Leave space for header, body, summary, and footer
+			m.viewport.YPosition = 0
+			m.ready = true
+		} else {
+			m.viewport.Width = msg.Width
+			m.viewport.Height = msg.Height - 12
+		}
 		return m, nil
 
 	case tea.KeyMsg:
@@ -2296,9 +2511,12 @@ func (m tagsInspectModel) View() string {
 
 		titleStyle := lipgloss.NewStyle().
 			Bold(true).
-			Foreground(lipgloss.Color("#7D56F4"))
+			Foreground(lipgloss.Color("#7D56F4")).
+			PaddingLeft(2)
 		hashStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#888888"))
-		dimStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#888888"))
+		dimStyle := lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#888888")).
+			PaddingLeft(2)
 		addStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#04B575"))
 		delStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#FF5555"))
 		commitHashStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#FFAA00"))
@@ -2319,18 +2537,19 @@ func (m tagsInspectModel) View() string {
 				dimStyle.Render(m.tagDetail.RelativeTime),
 			))
 		} else {
-			s.WriteString(fmt.Sprintf("%s\n",
-				dimStyle.Render(m.tagDetail.RelativeTime),
-			))
+			s.WriteString(dimStyle.Render(m.tagDetail.RelativeTime))
+			s.WriteString("\n")
 		}
 
 		// Tag body/message
 		if m.tagDetail.Body != "" {
 			s.WriteString("\n")
-			bodyStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#FFFFFF"))
+			bodyStyle := lipgloss.NewStyle().
+				Foreground(lipgloss.Color("#FFFFFF")).
+				PaddingLeft(4)
 			// Indent body lines
 			for _, line := range strings.Split(m.tagDetail.Body, "\n") {
-				s.WriteString("  " + bodyStyle.Render(line) + "\n")
+				s.WriteString(bodyStyle.Render(line) + "\n")
 			}
 		}
 
@@ -2340,7 +2559,7 @@ func (m tagsInspectModel) View() string {
 		summaryParts := []string{
 			fmt.Sprintf("%d commits", len(m.commits)),
 		}
-		s.WriteString("  " + dimStyle.Render(summaryParts[0]))
+		s.WriteString(dimStyle.Render(summaryParts[0]))
 		if m.totalAdditions > 0 || m.totalDeletions > 0 {
 			s.WriteString("  " + addStyle.Render(fmt.Sprintf("+%d", m.totalAdditions)))
 			s.WriteString("  " + delStyle.Render(fmt.Sprintf("-%d", m.totalDeletions)))
@@ -2351,8 +2570,11 @@ func (m tagsInspectModel) View() string {
 		s.WriteString("\n\n")
 
 		// Commits list
+		contentStyle := lipgloss.NewStyle().PaddingLeft(2).PaddingRight(2)
+		var content strings.Builder
+
 		if len(m.commits) == 0 {
-			s.WriteString("  " + dimStyle.Render("No commits in this tag range") + "\n")
+			content.WriteString(dimStyle.Render("No commits in this tag range") + "\n")
 		} else {
 			for i, commit := range m.commits {
 				cursor := "  "
@@ -2379,7 +2601,7 @@ func (m tagsInspectModel) View() string {
 					msg = msg[:maxMsgLen-3] + "..."
 				}
 
-				s.WriteString(fmt.Sprintf("%s%s%s  %s  %s\n",
+				content.WriteString(fmt.Sprintf("%s%s%s  %s  %s\n",
 					cursor,
 					commitHashStyle.Render(commit.ShortHash),
 					statsStr,
@@ -2389,14 +2611,19 @@ func (m tagsInspectModel) View() string {
 			}
 		}
 
+		s.WriteString(contentStyle.Render(content.String()))
 		s.WriteString("\n")
 
 		// Help
 		if m.showHelp {
-			helpStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#888888"))
+			helpStyle := lipgloss.NewStyle().
+				Foreground(lipgloss.Color("#888888")).
+				PaddingLeft(2)
 			s.WriteString(helpStyle.Render("↑/k: up  ↓/j: down  g/G: top/bottom  ?: help  q: quit"))
 		} else {
-			helpStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#888888"))
+			helpStyle := lipgloss.NewStyle().
+				Foreground(lipgloss.Color("#888888")).
+				PaddingLeft(2)
 			s.WriteString(helpStyle.Render("Press ? for help"))
 		}
 
