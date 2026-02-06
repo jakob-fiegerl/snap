@@ -242,7 +242,7 @@ func main() {
 		}
 
 		// Run the TUI
-		p := tea.NewProgram(initialSyncModel(pullOnly), tea.WithAltScreen())
+		p := tea.NewProgram(initialSyncModel(pullOnly))
 		if _, err := p.Run(); err != nil {
 			fmt.Printf("Error: %v\n", err)
 			os.Exit(1)
@@ -531,7 +531,7 @@ func main() {
 			}
 		}
 
-		p := tea.NewProgram(initialModelWithMessage(seed, customMessage), tea.WithAltScreen())
+		p := tea.NewProgram(initialModelWithMessage(seed, customMessage))
 		if _, err := p.Run(); err != nil {
 			fmt.Printf("Error: %v\n", err)
 			os.Exit(1)
