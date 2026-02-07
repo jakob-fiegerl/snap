@@ -19,7 +19,7 @@ Usage: snap <command> [options]
 Commands:
     init              Initialize a new repository
     save [message]    Save changes with AI-generated or custom message
-    change            Show uncommitted changes
+    status            Show repository status and changes
     sync              Smart push/pull with remote
     stack             Show commit history as a visual timeline
     branch            Manage branches
@@ -57,13 +57,20 @@ Example:
   snap init`)
 }
 
-func printChangeHelp() {
-	fmt.Println(`Usage: snap change
+func printStatusHelp() {
+	fmt.Println(`Usage: snap status
 
-Show uncommitted changes (staged and unstaged files).
+Show repository status including current branch, last commit, and all changes.
+
+Displays:
+  - Current branch name
+  - Last commit information (hash, message, date)
+  - Staged changes (ready to commit)
+  - Unstaged changes (modified but not staged)
+  - Untracked files (new files not in git)
 
 Example:
-  snap change`)
+  snap status`)
 }
 
 func printSaveHelp() {
@@ -219,27 +226,22 @@ func main() {
 		fmt.Println("✓ Repository initialized!")
 		fmt.Println("\nNext steps:")
 		fmt.Println("  1. Create some files")
-		fmt.Println("  2. Run 'snap change' to see what's new")
+		fmt.Println("  2. Run 'snap status' to see what's new")
 		fmt.Println("  3. Run 'snap save \"Initial commit\"' to save your work")
 		os.Exit(0)
 
-	case "change":
+	case "status":
 		if hasHelpFlag() {
-			printChangeHelp()
+			printStatusHelp()
 			os.Exit(0)
 		}
-		status, err := GetColoredStatus()
+		status, err := GetEnhancedStatus()
 		if err != nil {
 			fmt.Printf("Error: failed to get status: %v\n", err)
 			os.Exit(1)
 		}
 
-		if status == "" {
-			fmt.Println("No changes - everything is clean!")
-		} else {
-			fmt.Println("Changes:")
-			fmt.Print(status)
-		}
+		fmt.Print(status)
 		os.Exit(0)
 
 	case "sync":

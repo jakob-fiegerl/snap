@@ -53,84 +53,325 @@ func GetStatus() (string, error) {
 	return string(output), nil
 }
 
-// GetColoredStatus returns a colored, human-readable git status
-func GetColoredStatus() (string, error) {
+// FileStatus represents a single file's status
+type FileStatus struct {
+	Status   string
+	Filename string
+	Staged   bool
+}
+
+// GetCommitsAheadOfRemote returns the number of commits ahead of the remote branch
+func GetCommitsAheadOfRemote() (int, error) {
+	// Check if upstream exists first
+	hasUpstream, err := HasUpstreamBranch()
+	if err != nil || !hasUpstream {
+		return 0, nil
+	}
+
+	cmd := exec.Command("git", "rev-list", "--count", "@{upstream}..HEAD")
+	output, err := cmd.Output()
+	if err != nil {
+		return 0, nil
+	}
+
+	var count int
+	fmt.Sscanf(strings.TrimSpace(string(output)), "%d", &count)
+	return count, nil
+}
+
+// GetUnpushedCommits returns commits that are ahead of the remote branch
+func GetUnpushedCommits() ([]CommitInfo, error) {
+	// Check if upstream exists first
+	hasUpstream, err := HasUpstreamBranch()
+	if err != nil || !hasUpstream {
+		return []CommitInfo{}, nil
+	}
+
+	// Get commits between upstream and HEAD
+	args := []string{"log", "--pretty=format:%H|%h|%s|%an|%ai|%ar", "@{upstream}..HEAD"}
+	cmd := exec.Command("git", args...)
+	output, err := cmd.Output()
+	if err != nil {
+		return []CommitInfo{}, nil
+	}
+
+	if len(output) == 0 {
+		return []CommitInfo{}, nil
+	}
+
+	lines := strings.Split(strings.TrimSpace(string(output)), "\n")
+	commits := make([]CommitInfo, 0, len(lines))
+
+	for _, line := range lines {
+		parts := strings.SplitN(line, "|", 6)
+		if len(parts) != 6 {
+			continue
+		}
+
+		commits = append(commits, CommitInfo{
+			Hash:         parts[0],
+			ShortHash:    parts[1],
+			Message:      parts[2],
+			Author:       parts[3],
+			Date:         parts[4],
+			RelativeTime: parts[5],
+		})
+	}
+
+	return commits, nil
+}
+
+// GetBaseCommit returns the last commit that exists on the remote (upstream)
+func GetBaseCommit() (CommitInfo, error) {
+	// Check if upstream exists first
+	hasUpstream, err := HasUpstreamBranch()
+	if err != nil || !hasUpstream {
+		// If no upstream, return the last commit
+		commits, err := GetCommitHistory(1, false, "", "")
+		if err != nil || len(commits) == 0 {
+			return CommitInfo{}, fmt.Errorf("no commits found")
+		}
+		return commits[0], nil
+	}
+
+	// Get the commit that upstream points to
+	args := []string{"log", "--pretty=format:%H|%h|%s|%an|%ai|%ar", "-1", "@{upstream}"}
+	cmd := exec.Command("git", args...)
+	output, err := cmd.Output()
+	if err != nil {
+		return CommitInfo{}, err
+	}
+
+	line := strings.TrimSpace(string(output))
+	parts := strings.SplitN(line, "|", 6)
+	if len(parts) != 6 {
+		return CommitInfo{}, fmt.Errorf("invalid commit format")
+	}
+
+	return CommitInfo{
+		Hash:         parts[0],
+		ShortHash:    parts[1],
+		Message:      parts[2],
+		Author:       parts[3],
+		Date:         parts[4],
+		RelativeTime: parts[5],
+	}, nil
+}
+
+// GetEnhancedStatus returns a beautifully formatted git status with metadata
+func GetEnhancedStatus() (string, error) {
+	var result strings.Builder
+
+	// Styles
+	stagedHeaderStyle := lipgloss.NewStyle().
+		Bold(true).
+		Foreground(lipgloss.Color("#00D7AF"))
+
+	unstagedHeaderStyle := lipgloss.NewStyle().
+		Bold(true).
+		Foreground(lipgloss.Color("#FFD700"))
+
+	localCommitsHeaderStyle := lipgloss.NewStyle().
+		Bold(true).
+		Foreground(lipgloss.Color("#FF8800"))
+
+	originStyle := lipgloss.NewStyle().
+		Bold(true).
+		Foreground(lipgloss.Color("#7D56F4"))
+
+	infoStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("#888888"))
+
+	commitHashStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("#04B575"))
+
+	whiteStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#FFFFFF"))
+	filenameStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#CCCCCC"))
+	boxStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#555555"))
+
+	// Get current branch
+	branch, err := GetCurrentBranch()
+	if err != nil {
+		return "", err
+	}
+
+	// Get base commit (last pushed)
+	baseCommit, err := GetBaseCommit()
+	var hasBase bool
+	if err == nil {
+		hasBase = true
+	}
+
+	// Get unpushed commits
+	unpushedCommits, _ := GetUnpushedCommits()
+
+	// Get status
 	cmd := exec.Command("git", "status", "--short")
 	output, err := cmd.Output()
 	if err != nil {
 		return "", err
 	}
 
-	if len(output) == 0 {
-		return "", nil
-	}
-
+	// Parse files into staged and unstaged
 	lines := strings.Split(string(output), "\n")
-	var result strings.Builder
-
-	greenStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#04B575"))
-	redStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#FF5555"))
-	orangeStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#FF8800"))
+	var stagedFiles []FileStatus
+	var unstagedFiles []FileStatus
 
 	for _, line := range lines {
-		// Skip empty lines
-		if len(line) < 4 {
+		if len(line) < 3 {
 			continue
 		}
 
-		// Git status format: XY filename (with leading space)
-		// Position 0: space, Position 1: staged status, Position 2: unstaged status
 		statusCode := line[0:2]
 		filename := line[3:]
 
-		var color lipgloss.Style
-		var status string
-
-		switch {
-		// New file (untracked)
-		case statusCode == "??":
-			color = redStyle
-			status = "  untracked"
-		// Added (staged)
-		case statusCode[0] == 'A':
-			color = greenStyle
-			status = "  added"
-		// Modified (unstaged)
-		case statusCode[1] == 'M':
-			color = orangeStyle
-			status = "  modified"
-		// Modified (staged)
-		case statusCode[0] == 'M':
-			color = greenStyle
-			status = "  modified"
-		// Deleted (unstaged)
-		case statusCode[1] == 'D':
-			color = redStyle
-			status = "  deleted"
-		// Deleted (staged)
-		case statusCode[0] == 'D':
-			color = redStyle
-			status = "  deleted"
-		// Renamed
-		case statusCode[0] == 'R':
-			color = greenStyle
-			status = "  renamed"
-		// Copied
-		case statusCode[0] == 'C':
-			color = greenStyle
-			status = "  copied"
-		default:
-			color = orangeStyle
-			status = "  changed"
+		// Check staged status (first character)
+		if statusCode[0] != ' ' && statusCode[0] != '?' {
+			var status string
+			switch statusCode[0] {
+			case 'A':
+				status = "A"
+			case 'M':
+				status = "M"
+			case 'D':
+				status = "D"
+			case 'R':
+				status = "R"
+			case 'C':
+				status = "C"
+			default:
+				status = "?"
+			}
+			stagedFiles = append(stagedFiles, FileStatus{
+				Status:   status,
+				Filename: filename,
+				Staged:   true,
+			})
 		}
 
-		result.WriteString(color.Render(fmt.Sprintf("%-12s", status)))
+		// Check unstaged status (second character)
+		if statusCode[1] != ' ' {
+			var status string
+			switch statusCode[1] {
+			case 'M':
+				status = "M"
+			case 'D':
+				status = "D"
+			case '?':
+				status = "?"
+			default:
+				status = "?"
+			}
+			unstagedFiles = append(unstagedFiles, FileStatus{
+				Status:   status,
+				Filename: filename,
+				Staged:   false,
+			})
+		}
+
+		// Handle untracked files
+		if statusCode == "??" {
+			unstagedFiles = append(unstagedFiles, FileStatus{
+				Status:   "?",
+				Filename: filename,
+				Staged:   false,
+			})
+		}
+	}
+
+	// Check if we have anything to display
+	hasChanges := len(stagedFiles) > 0 || len(unstagedFiles) > 0
+	hasUnpushed := len(unpushedCommits) > 0
+
+	if !hasChanges && !hasUnpushed {
+		result.WriteString(stagedHeaderStyle.Render("✓ Working tree clean - no changes"))
+		result.WriteString("\n")
+		return result.String(), nil
+	}
+
+	// Start the box only if we have staged changes
+	if len(stagedFiles) > 0 {
+		result.WriteString(boxStyle.Render("┌"))
+		result.WriteString("\n")
+	}
+
+	// Display staged changes
+	if len(stagedFiles) > 0 {
+		result.WriteString(boxStyle.Render("│  "))
+		result.WriteString(stagedHeaderStyle.Render("[staged changes]"))
+		result.WriteString("\n")
+		for _, file := range stagedFiles {
+			result.WriteString(boxStyle.Render("│  "))
+			result.WriteString(whiteStyle.Render(fmt.Sprintf("%s", file.Status)))
+			result.WriteString("  ")
+			result.WriteString(filenameStyle.Render(file.Filename))
+			result.WriteString("\n")
+		}
+		result.WriteString(boxStyle.Render("│"))
+		result.WriteString("\n")
+	}
+
+	// Display unstaged changes
+	if len(unstagedFiles) > 0 {
+		result.WriteString(boxStyle.Render("├─ "))
+		result.WriteString(unstagedHeaderStyle.Render("[unstaged changes]"))
+		result.WriteString("\n")
+		for _, file := range unstagedFiles {
+			result.WriteString(boxStyle.Render("│  "))
+			result.WriteString(whiteStyle.Render(fmt.Sprintf("%s", file.Status)))
+			result.WriteString("  ")
+			result.WriteString(filenameStyle.Render(file.Filename))
+			result.WriteString("\n")
+		}
+		result.WriteString(boxStyle.Render("│"))
+		result.WriteString("\n")
+	}
+
+	// Display unpushed commits
+	if len(unpushedCommits) > 0 {
+		result.WriteString(boxStyle.Render("├─ "))
+		result.WriteString(localCommitsHeaderStyle.Render("[local commits]"))
+		result.WriteString("\n")
+		for _, commit := range unpushedCommits {
+			result.WriteString(boxStyle.Render("│  "))
+			result.WriteString(commitHashStyle.Render(commit.ShortHash))
+			result.WriteString(infoStyle.Render(" • "))
+			// Truncate commit message to prevent line wrapping (max 80 chars)
+			msg := commit.Message
+			if len(msg) > 80 {
+				msg = msg[:77] + "..."
+			}
+			result.WriteString(whiteStyle.Render(msg))
+			result.WriteString(infoStyle.Render(fmt.Sprintf(" • %s", commit.RelativeTime)))
+			result.WriteString("\n")
+		}
+		result.WriteString(boxStyle.Render("│"))
+		result.WriteString("\n")
+	}
+
+	// Display base commit at bottom
+	if hasBase {
+		result.WriteString(boxStyle.Render("┴  "))
+		result.WriteString(originStyle.Render(fmt.Sprintf("[origin/%s]", branch)))
 		result.WriteString(" ")
-		result.WriteString(color.Render(filename))
+		result.WriteString(commitHashStyle.Render(baseCommit.ShortHash))
+		result.WriteString(infoStyle.Render(" • "))
+		// Truncate commit message to prevent line wrapping (max 80 chars)
+		msg := baseCommit.Message
+		if len(msg) > 80 {
+			msg = msg[:77] + "..."
+		}
+		result.WriteString(whiteStyle.Render(msg))
+		result.WriteString(infoStyle.Render(fmt.Sprintf(" • %s", baseCommit.RelativeTime)))
 		result.WriteString("\n")
 	}
 
 	return result.String(), nil
+}
+
+// GetColoredStatus returns a colored, human-readable git status (legacy)
+func GetColoredStatus() (string, error) {
+	return GetEnhancedStatus()
 }
 
 // CheckRemoteExists checks if a remote repository is configured
