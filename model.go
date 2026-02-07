@@ -2666,3 +2666,204 @@ func getTagInspectCmd(tagName string) tea.Cmd {
 		}
 	}
 }
+
+// Reword model - for rewriting commit messages
+
+type rewordState int
+
+const (
+	rewordStateLoading rewordState = iota
+	rewordStateEditing
+	rewordStateConfirming
+	rewordStateAmending
+	rewordStateDone
+	rewordStateError
+)
+
+type rewordModel struct {
+	state       rewordState
+	spinner     spinner.Model
+	textInput   textinput.Model
+	err         error
+	commitHash  string
+	originalMsg string
+	newMsg      string
+}
+
+type getCommitMsg struct {
+	message string
+	err     error
+}
+
+type amendCommitMsg struct {
+	err error
+}
+
+func initialRewordModel(commitHash string) rewordModel {
+	s := spinner.New()
+	s.Spinner = spinner.Dot
+	s.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("#7D56F4"))
+
+	ti := textinput.New()
+	ti.Placeholder = "Enter new commit message..."
+	ti.Focus()
+	ti.CharLimit = 500
+	ti.Width = 80
+
+	return rewordModel{
+		state:      rewordStateLoading,
+		spinner:    s,
+		textInput:  ti,
+		commitHash: commitHash,
+	}
+}
+
+func (m rewordModel) Init() tea.Cmd {
+	return tea.Batch(
+		m.spinner.Tick,
+		getCommitMessageCmd(m.commitHash),
+	)
+}
+
+func (m rewordModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		switch m.state {
+		case rewordStateEditing:
+			switch msg.String() {
+			case "ctrl+c", "esc":
+				return m, tea.Quit
+			case "enter":
+				// Move to confirmation
+				m.newMsg = m.textInput.Value()
+				if strings.TrimSpace(m.newMsg) == "" {
+					m.err = fmt.Errorf("commit message cannot be empty")
+					m.state = rewordStateError
+					return m, nil
+				}
+				m.state = rewordStateConfirming
+				return m, nil
+			default:
+				var cmd tea.Cmd
+				m.textInput, cmd = m.textInput.Update(msg)
+				return m, cmd
+			}
+
+		case rewordStateConfirming:
+			switch msg.String() {
+			case "y", "Y":
+				m.state = rewordStateAmending
+				return m, tea.Batch(
+					m.spinner.Tick,
+					amendCommitMessageCmd(m.newMsg),
+				)
+			case "n", "N", "esc":
+				// Go back to editing
+				m.state = rewordStateEditing
+				return m, nil
+			case "ctrl+c":
+				return m, tea.Quit
+			}
+
+		case rewordStateDone, rewordStateError:
+			return m, tea.Quit
+		}
+
+	case getCommitMsg:
+		if msg.err != nil {
+			m.err = msg.err
+			m.state = rewordStateError
+			return m, nil
+		}
+		m.originalMsg = msg.message
+		m.textInput.SetValue(msg.message)
+		m.state = rewordStateEditing
+		return m, nil
+
+	case amendCommitMsg:
+		if msg.err != nil {
+			m.err = msg.err
+			m.state = rewordStateError
+			return m, nil
+		}
+		m.state = rewordStateDone
+		return m, tea.Quit
+
+	case spinner.TickMsg:
+		var cmd tea.Cmd
+		m.spinner, cmd = m.spinner.Update(msg)
+		return m, cmd
+	}
+
+	return m, nil
+}
+
+func (m rewordModel) View() string {
+	switch m.state {
+	case rewordStateLoading:
+		return fmt.Sprintf("%s Loading commit message...", m.spinner.View())
+
+	case rewordStateEditing:
+		var s strings.Builder
+		s.WriteString(titleStyle.Render("📝 Reword Commit Message"))
+		s.WriteString("\n\n")
+		s.WriteString(infoStyle.Render("Original: "))
+		s.WriteString(m.originalMsg)
+		s.WriteString("\n\n")
+		s.WriteString(m.textInput.View())
+		s.WriteString("\n\n")
+		s.WriteString(infoStyle.Render("Press Enter to confirm, Esc to cancel"))
+		return s.String()
+
+	case rewordStateConfirming:
+		var s strings.Builder
+		s.WriteString(titleStyle.Render("📝 Confirm New Message"))
+		s.WriteString("\n\n")
+		s.WriteString(infoStyle.Render("Original: "))
+		s.WriteString(m.originalMsg)
+		s.WriteString("\n\n")
+		s.WriteString(highlightStyle.Render("New message: "))
+		s.WriteString(m.newMsg)
+		s.WriteString("\n\n")
+		s.WriteString("Proceed with reword? [y/n] ")
+		return s.String()
+
+	case rewordStateAmending:
+		return fmt.Sprintf("%s Amending commit...", m.spinner.View())
+
+	case rewordStateDone:
+		return successStyle.Render("✓ Commit message updated successfully!")
+
+	case rewordStateError:
+		return errorStyle.Render(fmt.Sprintf("✗ Error: %s", m.err))
+	}
+
+	return ""
+}
+
+func getCommitMessageCmd(commitHash string) tea.Cmd {
+	return func() tea.Msg {
+		var message string
+		var err error
+
+		if commitHash == "" {
+			// Get the last commit message
+			message, err = GetLastCommitMessage()
+		} else {
+			// Get specific commit message
+			message, err = GetCommitMessage(commitHash)
+		}
+
+		return getCommitMsg{
+			message: message,
+			err:     err,
+		}
+	}
+}
+
+func amendCommitMessageCmd(newMessage string) tea.Cmd {
+	return func() tea.Msg {
+		err := AmendCommitMessage(newMessage)
+		return amendCommitMsg{err: err}
+	}
+}

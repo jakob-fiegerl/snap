@@ -981,3 +981,40 @@ func GetTagRangeDiffStats(fromTag, toTag string) (additions, deletions, filesCha
 
 	return additions, deletions, filesChanged, nil
 }
+
+// GetLastCommitMessage returns the message of the most recent commit
+func GetLastCommitMessage() (string, error) {
+	cmd := exec.Command("git", "log", "-1", "--pretty=format:%s")
+	output, err := cmd.Output()
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(output)), nil
+}
+
+// GetCommitMessage returns the full message of a specific commit
+func GetCommitMessage(commitHash string) (string, error) {
+	cmd := exec.Command("git", "log", "-1", "--pretty=format:%s", commitHash)
+	output, err := cmd.Output()
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(output)), nil
+}
+
+// AmendCommitMessage rewrites the last commit message
+func AmendCommitMessage(newMessage string) error {
+	cmd := exec.Command("git", "commit", "--amend", "-m", newMessage)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("%w: %s", err, string(output))
+	}
+	return nil
+}
+
+// RewordCommit rewrites a specific commit message using interactive rebase
+// This is more complex and requires setting up an interactive rebase
+func RewordCommit(commitHash string, newMessage string) error {
+	// This will be handled by the TUI model using a sequence of commands
+	return fmt.Errorf("reword via interactive rebase must be handled through TUI")
+}

@@ -45,6 +45,7 @@ snap sync                  Pull + push in one go
 snap stack                 Browse your commit history
 snap branch                Manage branches interactively
 snap replay main           Rebase onto another branch
+snap reword                Reword a commit message
 snap tag                  List, inspect, diff, or create tags
 ```
 
@@ -61,6 +62,7 @@ Run `snap <command> --help` for details on any command.
 | `git log` | `snap stack` |
 | `git checkout -b feature` | `snap branch new feature` |
 | `git rebase main` | `snap replay main` |
+| `git commit --amend -m "new msg"` | `snap reword` |
 | `git tag -l` | `snap tag` |
 | `git show v1.0.0` | `snap tag inspect v1.0.0` |
 
@@ -72,8 +74,78 @@ Run `snap <command> --help` for details on any command.
 
 ## 🌐 Future commands
 
-- `snap reword`: rewords a commit or a branch
-- 
+### Workspaces
+`snap new <name>` Create workspace.
+`snap new my-feature`
+`snap new experiment --from develop`
+`snap switch <name>` Switch workspace. Uncommitted changes stay in previous workspace.
+`snap switch my-feature`
+`snap list` List all workspaces.
+`snap merge <workspace> [--into main]` Merge workspace.
+
+#### Technical Documentation
+
+```bash
+snap new my-feature --from main
+```
+
+1. Create git branch: `workspace/my-feature`
+2. Create worktree: `git worktree add workspaces/my-feature workspace/my-feature`
+3. Save metadata: `.snap/workspaces/my-feature.json`
+
+**Directory structure:**
+```
+workspaces/
+  my-feature/          # isolated directory
+    .git              # points to .git/worktrees/my-feature
+    src/
+```
+
+**Metadata:**
+```json
+{
+  "name": "my-feature",
+  "branch": "workspace/my-feature",
+  "base_branch": "main",
+  "base_commit": "abc123"
+}
+```
+
+##### Workspace Switching
+
+```bash
+snap switch my-feature
+```
+
+1. Validate workspace exists
+2. Change directory to `workspaces/my-feature/`
+3. Update `.snap/state.json` current workspace
+
+**No git stash needed** - each workspace is a separate directory.
+
+##### Workspace Merging
+
+```bash
+snap merge auth-ai --into main
+```
+
+1. If `--into main`: checkout main in original repo
+2. Merge `workspace/auth-ai` branch
+3. Delete workspace branch and directory
+
+**Implementation:**
+```bash
+# Into main
+git checkout main
+git merge workspace/auth-ai
+git worktree remove workspaces/auth-ai
+git branch -D workspace/auth-ai
+
+# Into current workspace
+cd workspaces/my-feature
+git merge workspace/auth-ai
+```
+
 
 ## 📄 License
 

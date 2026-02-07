@@ -24,6 +24,7 @@ Commands:
     stack             Show commit history as a visual timeline
     branch            Manage branches
     replay <branch>   Replay commits onto another branch (rebase)
+    reword [commit]   Reword a commit message
     tag               Manage tags
 
     help, --help      Show this help message
@@ -157,6 +158,20 @@ Examples:
   snap tag inspect v1.0.0      Inspect a specific tag
   snap tag diff                Show commits since last tag
   snap tag create v1.0.0       Create and push a new tag`)
+}
+
+func printRewordHelp() {
+	fmt.Println(`Usage: snap reword [COMMIT]
+
+Reword a commit message - edit the most recent commit or a specific one.
+
+Examples:
+  snap reword                  Reword the most recent commit
+  snap reword abc123           Reword a specific commit (hash)
+
+Interactive controls:
+  Enter               Confirm and apply the new message
+  Esc                 Cancel and exit`)
 }
 
 func main() {
@@ -412,6 +427,26 @@ func main() {
 
 		// Run the TUI
 		p := tea.NewProgram(initialReplayModel(ontoBranch, interactive), tea.WithAltScreen())
+		if _, err := p.Run(); err != nil {
+			fmt.Printf("Error: %v\n", err)
+			os.Exit(1)
+		}
+		os.Exit(0)
+
+	case "reword":
+		if hasHelpFlag() {
+			printRewordHelp()
+			os.Exit(0)
+		}
+		// Parse arguments
+		commitHash := ""
+
+		if len(os.Args) > 2 && !strings.HasPrefix(os.Args[2], "-") {
+			commitHash = os.Args[2]
+		}
+
+		// Run the TUI
+		p := tea.NewProgram(initialRewordModel(commitHash))
 		if _, err := p.Run(); err != nil {
 			fmt.Printf("Error: %v\n", err)
 			os.Exit(1)
