@@ -40,7 +40,7 @@ ollama serve
 snap init                  Start a new repo
 snap save "fixed the bug"  Save your changes
 snap save                  Save with an AI-generated message 🤖
-snap change               See what's different
+snap status                Beautiful status with branch, commit info & changes
 snap sync                  Pull + push in one go
 snap stack                 Browse your commit history
 snap branch                Manage branches interactively
@@ -56,7 +56,7 @@ Run `snap <command> --help` for details on any command.
 | Git | Snap |
 |-----|------|
 | `git init` | `snap init` |
-| `git status` | `snap change` |
+| `git status` | `snap status` |
 | `git add . && git commit -m "msg"` | `snap save "msg"` |
 | `git pull && git push` | `snap sync` |
 | `git log` | `snap stack` |
