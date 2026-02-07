@@ -175,15 +175,11 @@ func GetEnhancedStatus() (string, error) {
 		Bold(true).
 		Foreground(lipgloss.Color("#FF8800"))
 
-	originStyle := lipgloss.NewStyle().
-		Bold(true).
-		Foreground(lipgloss.Color("#7D56F4"))
+	originBranchStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("#5FD787"))
 
 	infoStyle := lipgloss.NewStyle().
 		Foreground(lipgloss.Color("#888888"))
-
-	commitHashStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("#04B575"))
 
 	whiteStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#FFFFFF"))
 	filenameStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#CCCCCC"))
@@ -334,7 +330,7 @@ func GetEnhancedStatus() (string, error) {
 		result.WriteString("\n")
 		for _, commit := range unpushedCommits {
 			result.WriteString(boxStyle.Render("│  "))
-			result.WriteString(commitHashStyle.Render(commit.ShortHash))
+			result.WriteString(infoStyle.Render(commit.ShortHash))
 			result.WriteString(infoStyle.Render(" • "))
 			// Truncate commit message to prevent line wrapping (max 80 chars)
 			msg := commit.Message
@@ -352,9 +348,9 @@ func GetEnhancedStatus() (string, error) {
 	// Display base commit at bottom
 	if hasBase {
 		result.WriteString(boxStyle.Render("┴  "))
-		result.WriteString(originStyle.Render(fmt.Sprintf("[origin/%s]", branch)))
-		result.WriteString(" ")
-		result.WriteString(commitHashStyle.Render(baseCommit.ShortHash))
+		result.WriteString(originBranchStyle.Render(fmt.Sprintf("[origin/%s]", branch)))
+		result.WriteString(infoStyle.Render(" "))
+		result.WriteString(infoStyle.Render(baseCommit.ShortHash))
 		result.WriteString(infoStyle.Render(" • "))
 		// Truncate commit message to prevent line wrapping (max 80 chars)
 		msg := baseCommit.Message
