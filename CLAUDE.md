@@ -71,7 +71,7 @@ go run *.go save
 
 # Run installed binary
 snap save
-snap changes
+snap change
 snap help
 ```
 
@@ -210,6 +210,7 @@ case "commandname":
 4. **Consistency:** Follow established patterns in the codebase
 5. **User-friendly:** Default to the most common use case
 6. **No staging area confusion:** Commands should work directly on working directory
+7. **Singular commands:** All command names MUST be singular (e.g., `change` not `changes`, `tag` not `tags`)
 
 ## Common Pitfalls
 
@@ -218,3 +219,4 @@ case "commandname":
 - Not checking if Ollama is running before AI operations
 - Using `panic` instead of returning errors
 - Not updating help text when adding new commands
+- Using plural command names (always use singular: `change`, `tag`, `branch`, etc.)

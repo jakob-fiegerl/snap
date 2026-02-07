@@ -19,12 +19,12 @@ Usage: snap <command> [options]
 Commands:
     init              Initialize a new repository
     save [message]    Save changes with AI-generated or custom message
-    changes           Show uncommitted changes
+    change            Show uncommitted changes
     sync              Smart push/pull with remote
     stack             Show commit history as a visual timeline
     branch            Manage branches
     replay <branch>   Replay commits onto another branch (rebase)
-    tags              Manage tags
+    tag               Manage tags
 
     help, --help      Show this help message
     version           Show version information
@@ -56,13 +56,13 @@ Example:
   snap init`)
 }
 
-func printChangesHelp() {
-	fmt.Println(`Usage: snap changes
+func printChangeHelp() {
+	fmt.Println(`Usage: snap change
 
 Show uncommitted changes (staged and unstaged files).
 
 Example:
-  snap changes`)
+  snap change`)
 }
 
 func printSaveHelp() {
@@ -142,8 +142,8 @@ Examples:
   snap replay main -i    Interactive replay`)
 }
 
-func printTagsHelp() {
-	fmt.Println(`Usage: snap tags [SUBCOMMAND]
+func printTagHelp() {
+	fmt.Println(`Usage: snap tag [SUBCOMMAND]
 
 Manage tags - list, inspect, diff, or create.
 
@@ -153,10 +153,10 @@ Subcommands:
   create <version>    Create and push a new annotated tag
 
 Examples:
-  snap tags                     List all tags interactively
-  snap tags inspect v1.0.0      Inspect a specific tag
-  snap tags diff                Show commits since last tag
-  snap tags create v1.0.0       Create and push a new tag`)
+  snap tag                     List all tags interactively
+  snap tag inspect v1.0.0      Inspect a specific tag
+  snap tag diff                Show commits since last tag
+  snap tag create v1.0.0       Create and push a new tag`)
 }
 
 func main() {
@@ -188,7 +188,7 @@ func main() {
 		// Check if already a git repository
 		if IsGitRepository() {
 			fmt.Println("Error: already a git repository")
-			fmt.Println("Use 'snap changes' to see what's changed")
+			fmt.Println("Use 'snap change' to see what's changed")
 			os.Exit(1)
 		}
 
@@ -204,13 +204,13 @@ func main() {
 		fmt.Println("✓ Repository initialized!")
 		fmt.Println("\nNext steps:")
 		fmt.Println("  1. Create some files")
-		fmt.Println("  2. Run 'snap changes' to see what's new")
+		fmt.Println("  2. Run 'snap change' to see what's new")
 		fmt.Println("  3. Run 'snap save \"Initial commit\"' to save your work")
 		os.Exit(0)
 
-	case "changes":
+	case "change":
 		if hasHelpFlag() {
-			printChangesHelp()
+			printChangeHelp()
 			os.Exit(0)
 		}
 		status, err := GetColoredStatus()
@@ -418,9 +418,9 @@ func main() {
 		}
 		os.Exit(0)
 
-	case "tags":
+	case "tag":
 		if hasHelpFlag() {
-			printTagsHelp()
+			printTagHelp()
 			os.Exit(0)
 		}
 		// Parse subcommand
@@ -431,9 +431,9 @@ func main() {
 				// Inspect a specific tag
 				if len(os.Args) < 4 {
 					fmt.Println("Error: tag name required")
-					fmt.Println("Usage: snap tags inspect <tag>")
+					fmt.Println("Usage: snap tag inspect <tag>")
 					fmt.Println("\nExample:")
-					fmt.Println("  snap tags inspect v1.0.0")
+					fmt.Println("  snap tag inspect v1.0.0")
 					os.Exit(1)
 				}
 				tagName := os.Args[3]
@@ -457,9 +457,9 @@ func main() {
 				// Create a new tag
 				if len(os.Args) < 4 {
 					fmt.Println("Error: tag name required")
-					fmt.Println("Usage: snap tags create <version>")
+					fmt.Println("Usage: snap tag create <version>")
 					fmt.Println("\nExample:")
-					fmt.Println("  snap tags create v1.0.0")
+					fmt.Println("  snap tag create v1.0.0")
 					os.Exit(1)
 				}
 				tagName := os.Args[3]
@@ -473,7 +473,7 @@ func main() {
 			default:
 				fmt.Printf("Error: unknown subcommand '%s'\n", subcommand)
 				fmt.Println("\nValid subcommands: inspect, diff, create")
-				fmt.Println("Or run 'snap tags' to list all tags")
+				fmt.Println("Or run 'snap tag' to list all tags")
 				os.Exit(1)
 			}
 		}

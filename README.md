@@ -40,12 +40,12 @@ ollama serve
 snap init                  Start a new repo
 snap save "fixed the bug"  Save your changes
 snap save                  Save with an AI-generated message 🤖
-snap changes               See what's different
+snap change               See what's different
 snap sync                  Pull + push in one go
 snap stack                 Browse your commit history
 snap branch                Manage branches interactively
 snap replay main           Rebase onto another branch
-snap tags                  List, inspect, diff, or create tags
+snap tag                  List, inspect, diff, or create tags
 ```
 
 Run `snap <command> --help` for details on any command.
@@ -55,20 +55,25 @@ Run `snap <command> --help` for details on any command.
 | Git | Snap |
 |-----|------|
 | `git init` | `snap init` |
-| `git status` | `snap changes` |
+| `git status` | `snap change` |
 | `git add . && git commit -m "msg"` | `snap save "msg"` |
 | `git pull && git push` | `snap sync` |
 | `git log` | `snap stack` |
 | `git checkout -b feature` | `snap branch new feature` |
 | `git rebase main` | `snap replay main` |
-| `git tag -l` | `snap tags` |
-| `git show v1.0.0` | `snap tags inspect v1.0.0` |
+| `git tag -l` | `snap tag` |
+| `git show v1.0.0` | `snap tag inspect v1.0.0` |
 
 ## 📋 Requirements
 
 - **Go** 1.24.1+
 - **Git**
 - **Ollama** + llama3.2:3b *(optional, for AI commit messages)*
+
+## 🌐 Future commands
+
+- `snap reword`: rewords a commit or a branch
+- 
 
 ## 📄 License
 
