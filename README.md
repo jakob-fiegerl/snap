@@ -46,7 +46,8 @@ snap stack                 Browse your commit history
 snap branch                Manage branches interactively
 snap replay main           Rebase onto another branch
 snap reword                Reword a commit message
-snap tag                  List, inspect, diff, or create tags
+snap tag                   List, inspect, diff, or create tags
+snap space                 Manage workspaces (isolated dev environments)
 ```
 
 Run `snap <command> --help` for details on any command.
@@ -65,6 +66,7 @@ Run `snap <command> --help` for details on any command.
 | `git commit --amend -m "new msg"` | `snap reword` |
 | `git tag -l` | `snap tag` |
 | `git show v1.0.0` | `snap tag inspect v1.0.0` |
+| `git worktree add ...` | `snap space new <name>` |
 
 ## 📋 Requirements
 
@@ -72,33 +74,35 @@ Run `snap <command> --help` for details on any command.
 - **Git**
 - **Ollama** + llama3.2:3b *(optional, for AI commit messages)*
 
-## 🌐 Future commands
+## 🌐 Workspaces
 
-### Workspaces
-`snap new <name>` Create workspace.
-`snap new my-feature`
-`snap new experiment --from develop`
-`snap switch <name>` Switch workspace. Uncommitted changes stay in previous workspace.
-`snap switch my-feature`
-`snap list` List all workspaces.
-`snap merge <workspace> [--into main]` Merge workspace.
+Workspaces let you work on multiple features in parallel without git stash. Each workspace is an isolated directory with its own working tree.
 
-#### Technical Documentation
+### Commands
 
 ```bash
-snap new my-feature --from main
+snap space new <name>              # Create workspace from current branch
+snap space new my-feature --from main  # Create workspace from main
+snap space switch my-feature       # Get path to workspace
+snap space list                    # List all workspaces
+snap space merge my-feature        # Merge workspace into base branch
+snap space merge my-feature --into main  # Merge workspace into main
 ```
 
-1. Create git branch: `workspace/my-feature`
-2. Create worktree: `git worktree add workspaces/my-feature workspace/my-feature`
-3. Save metadata: `.snap/workspaces/my-feature.json`
+### How it works
+
+When you create a workspace:
+1. Creates git branch: `workspace/my-feature`
+2. Creates worktree: `workspaces/my-feature/`
+3. Saves metadata: `.snap/workspaces/my-feature.json`
 
 **Directory structure:**
 ```
-workspaces/
-  my-feature/          # isolated directory
-    .git              # points to .git/worktrees/my-feature
-    src/
+your-repo/
+  src/              # main working directory
+  workspaces/
+    my-feature/     # isolated workspace directory
+      src/          # independent copy of code
 ```
 
 **Metadata:**
@@ -111,40 +115,12 @@ workspaces/
 }
 ```
 
-##### Workspace Switching
+### Benefits
 
-```bash
-snap switch my-feature
-```
-
-1. Validate workspace exists
-2. Change directory to `workspaces/my-feature/`
-3. Update `.snap/state.json` current workspace
-
-**No git stash needed** - each workspace is a separate directory.
-
-##### Workspace Merging
-
-```bash
-snap merge auth-ai --into main
-```
-
-1. If `--into main`: checkout main in original repo
-2. Merge `workspace/auth-ai` branch
-3. Delete workspace branch and directory
-
-**Implementation:**
-```bash
-# Into main
-git checkout main
-git merge workspace/auth-ai
-git worktree remove workspaces/auth-ai
-git branch -D workspace/auth-ai
-
-# Into current workspace
-cd workspaces/my-feature
-git merge workspace/auth-ai
-```
+- **No git stash needed** - each workspace is a separate directory
+- **Switch instantly** - just `cd` to the workspace directory
+- **Work in parallel** - edit multiple features simultaneously
+- **Clean separation** - uncommitted changes stay in their workspace
 
 
 ## 📄 License

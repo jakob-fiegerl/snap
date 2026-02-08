@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -26,6 +27,7 @@ Commands:
     replay <branch>   Replay commits onto another branch (rebase)
     reword [commit]   Reword a commit message
     tag               Manage tags
+    space             Manage workspaces
 
     help, --help      Show this help message
     version           Show version information
@@ -179,6 +181,26 @@ Examples:
 Interactive controls:
   Enter               Confirm and apply the new message
   Esc                 Cancel and exit`)
+}
+
+func printSpaceHelp() {
+	fmt.Println(`Usage: snap space [SUBCOMMAND] [OPTIONS]
+
+Manage workspaces - create isolated development environments using git worktrees.
+
+Subcommands:
+  new <name>              Create a new workspace
+  switch <name>           Switch to an existing workspace
+  list                    List all workspaces
+  merge <name> [--into]   Merge a workspace
+
+Examples:
+  snap space new my-feature              Create workspace from current branch
+  snap space new my-feature --from main  Create workspace from main
+  snap space switch my-feature           Switch to workspace
+  snap space list                        List all workspaces
+  snap space merge my-feature            Merge workspace into base branch
+  snap space merge my-feature --into main  Merge workspace into main`)
 }
 
 func main() {
@@ -532,6 +554,156 @@ func main() {
 			}
 		}
 		os.Exit(0)
+
+	case "space":
+		if hasHelpFlag() {
+			printSpaceHelp()
+			os.Exit(0)
+		}
+
+		// Parse subcommand
+		if len(os.Args) < 3 {
+			fmt.Println("Error: subcommand required")
+			fmt.Println("\nValid subcommands: new, switch, list, merge")
+			fmt.Println("Run 'snap space --help' for more information")
+			os.Exit(1)
+		}
+
+		subcommand := os.Args[2]
+
+		switch subcommand {
+		case "new":
+			// Parse workspace name and options
+			if len(os.Args) < 4 {
+				fmt.Println("Error: workspace name required")
+				fmt.Println("Usage: snap space new <name> [--from branch]")
+				fmt.Println("\nExample:")
+				fmt.Println("  snap space new my-feature")
+				fmt.Println("  snap space new my-feature --from main")
+				os.Exit(1)
+			}
+
+			workspaceName := os.Args[3]
+			baseBranch := ""
+
+			// Parse --from flag
+			for i := 4; i < len(os.Args); i++ {
+				if os.Args[i] == "--from" && i+1 < len(os.Args) {
+					baseBranch = os.Args[i+1]
+					break
+				}
+			}
+
+			fmt.Printf("📂 Creating workspace '%s'...\n", workspaceName)
+
+			if err := CreateWorkspace(workspaceName, baseBranch); err != nil {
+				fmt.Printf("Error: %v\n", err)
+				os.Exit(1)
+			}
+
+			workspaceDir, _ := GetWorkspaceDir()
+			workspacePath := filepath.Join(workspaceDir, workspaceName)
+
+			fmt.Println("✓ Workspace created!")
+			fmt.Printf("\nNext steps:\n")
+			fmt.Printf("  cd %s\n", workspacePath)
+			fmt.Printf("  # Make your changes\n")
+			fmt.Printf("  snap save \"your changes\"\n")
+			fmt.Printf("  snap space merge %s\n", workspaceName)
+			os.Exit(0)
+
+		case "switch":
+			// Parse workspace name
+			if len(os.Args) < 4 {
+				fmt.Println("Error: workspace name required")
+				fmt.Println("Usage: snap space switch <name>")
+				fmt.Println("\nExample:")
+				fmt.Println("  snap space switch my-feature")
+				os.Exit(1)
+			}
+
+			workspaceName := os.Args[3]
+			workspacePath, err := SwitchToWorkspace(workspaceName)
+			if err != nil {
+				fmt.Printf("Error: %v\n", err)
+				os.Exit(1)
+			}
+
+			fmt.Printf("✓ Workspace found at: %s\n", workspacePath)
+			fmt.Printf("\nTo switch to this workspace, run:\n")
+			fmt.Printf("  cd %s\n", workspacePath)
+			os.Exit(0)
+
+		case "list":
+			workspaces, err := ListWorkspaces()
+			if err != nil {
+				fmt.Printf("Error: %v\n", err)
+				os.Exit(1)
+			}
+
+			if len(workspaces) == 0 {
+				fmt.Println("No workspaces found")
+				fmt.Println("\nCreate a new workspace with:")
+				fmt.Println("  snap space new <name>")
+				os.Exit(0)
+			}
+
+			// Get current workspace
+			currentWorkspace, _ := GetCurrentWorkspace()
+
+			fmt.Println("📂 Workspaces:")
+			fmt.Println()
+
+			for _, ws := range workspaces {
+				prefix := "  "
+				if ws.Name == currentWorkspace {
+					prefix = "* "
+				}
+				fmt.Printf("%s%s (from %s)\n", prefix, ws.Name, ws.BaseBranch)
+			}
+
+			fmt.Println()
+			fmt.Printf("Total: %d workspace(s)\n", len(workspaces))
+			os.Exit(0)
+
+		case "merge":
+			// Parse workspace name and options
+			if len(os.Args) < 4 {
+				fmt.Println("Error: workspace name required")
+				fmt.Println("Usage: snap space merge <name> [--into branch]")
+				fmt.Println("\nExample:")
+				fmt.Println("  snap space merge my-feature")
+				fmt.Println("  snap space merge my-feature --into main")
+				os.Exit(1)
+			}
+
+			workspaceName := os.Args[3]
+			targetBranch := ""
+
+			// Parse --into flag
+			for i := 4; i < len(os.Args); i++ {
+				if os.Args[i] == "--into" && i+1 < len(os.Args) {
+					targetBranch = os.Args[i+1]
+					break
+				}
+			}
+
+			fmt.Printf("🔀 Merging workspace '%s'...\n", workspaceName)
+
+			if err := MergeWorkspace(workspaceName, targetBranch); err != nil {
+				fmt.Printf("Error: %v\n", err)
+				os.Exit(1)
+			}
+
+			fmt.Println("✓ Workspace merged and deleted!")
+			os.Exit(0)
+
+		default:
+			fmt.Printf("Error: unknown subcommand '%s'\n", subcommand)
+			fmt.Println("\nValid subcommands: new, switch, list, merge")
+			fmt.Println("Run 'snap space --help' for more information")
+			os.Exit(1)
+		}
 
 	case "save":
 		if hasHelpFlag() {
