@@ -30,7 +30,7 @@ go build -o snap && sudo mv snap /usr/local/bin/
 **Optional** — for AI-generated commit messages:
 
 ```bash
-ollama pull llama3.2:3b
+ollama pull qwen2.5:1.5b
 ollama serve
 ```
 
@@ -72,7 +72,7 @@ Run `snap <command> --help` for details on any command.
 
 - **Go** 1.24.1+
 - **Git**
-- **Ollama** + llama3.2:3b *(optional, for AI commit messages)*
+- **Ollama** + qwen2.5:1.5b *(optional, for AI commit messages)*
 
 ## 🌐 Workspaces
 

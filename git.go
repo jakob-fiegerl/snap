@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os/exec"
+	"strconv"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
@@ -165,25 +166,25 @@ func GetEnhancedStatus() (string, error) {
 	// Styles
 	stagedHeaderStyle := lipgloss.NewStyle().
 		Bold(true).
-		Foreground(lipgloss.Color("#00D7AF"))
+		Foreground(colorSuccess)
 
 	unstagedHeaderStyle := lipgloss.NewStyle().
 		Bold(true).
-		Foreground(lipgloss.Color("#FFD700"))
+		Foreground(colorSecondary)
 
 	localCommitsHeaderStyle := lipgloss.NewStyle().
 		Bold(true).
-		Foreground(lipgloss.Color("#FF8800"))
+		Foreground(colorSecondary)
 
 	originBranchStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("#5FD787"))
+		Foreground(colorSuccess)
 
 	infoStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("#888888"))
+		Foreground(colorMuted)
 
-	whiteStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#FFFFFF"))
-	filenameStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#CCCCCC"))
-	boxStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#555555"))
+	whiteStyle := lipgloss.NewStyle().Foreground(colorText)
+	filenameStyle := lipgloss.NewStyle().Foreground(colorMuted)
+	boxStyle := lipgloss.NewStyle().Foreground(colorMuted)
 
 	// Get current branch
 	branch, err := GetCurrentBranch()
@@ -509,12 +510,16 @@ type BranchInfo struct {
 	Current    bool
 	LastCommit string
 	Upstream   string
+	Author     string
+	Date       string
+	Ahead      int
+	Behind     int
 }
 
 // GetBranches returns a list of all branches with metadata
 func GetBranches() ([]BranchInfo, error) {
-	// Get branch list with verbose info
-	cmd := exec.Command("git", "branch", "-vv")
+	format := "%(HEAD)||%(refname:short)||%(authorname)||%(committerdate:relative)||%(upstream:short)||%(subject)"
+	cmd := exec.Command("git", "for-each-ref", "--sort=-creatordate", "refs/heads/", "--format="+format)
 	output, err := cmd.Output()
 	if err != nil {
 		return nil, err
@@ -524,58 +529,67 @@ func GetBranches() ([]BranchInfo, error) {
 		return []BranchInfo{}, nil
 	}
 
-	// Split by newline - don't use TrimSpace as it removes leading spaces from first line
+	baseBranch := getBaseBranch()
 	lines := strings.Split(strings.TrimRight(string(output), "\n"), "\n")
 	branches := make([]BranchInfo, 0, len(lines))
 
 	for _, line := range lines {
-		if len(line) < 2 {
+		parts := strings.SplitN(line, "||", 6)
+		if len(parts) < 6 {
 			continue
 		}
 
-		isCurrent := line[0] == '*'
-
-		// Remove the '* ' or leading spaces
-		// Use TrimLeft to handle variable spacing
-		line = strings.TrimLeft(line, "* ")
-
-		// Parse: branchname hash [upstream] commit message
-		parts := strings.Fields(line)
-		if len(parts) < 2 {
-			continue
-		}
-
+		name := parts[1]
 		branch := BranchInfo{
-			Name:    parts[0],
-			Current: isCurrent,
+			Current:    parts[0] == "*",
+			Name:       name,
+			Author:     parts[2],
+			Date:       parts[3],
+			Upstream:   parts[4],
+			LastCommit: parts[5],
 		}
 
-		// Extract upstream if present (in square brackets)
-		if len(parts) > 2 && strings.HasPrefix(parts[2], "[") {
-			// Find closing bracket
-			upstreamEnd := 2
-			for i := 2; i < len(parts); i++ {
-				if strings.HasSuffix(parts[i], "]") {
-					upstreamEnd = i
-					break
-				}
-			}
-			upstream := strings.Join(parts[2:upstreamEnd+1], " ")
-			branch.Upstream = strings.Trim(upstream, "[]")
-
-			// Commit message is after upstream
-			if upstreamEnd+1 < len(parts) {
-				branch.LastCommit = strings.Join(parts[upstreamEnd+1:], " ")
-			}
-		} else if len(parts) > 2 {
-			// No upstream, commit message starts at index 2
-			branch.LastCommit = strings.Join(parts[2:], " ")
+		if name != baseBranch {
+			branch.Ahead, branch.Behind = branchAheadBehind(name, baseBranch)
 		}
 
 		branches = append(branches, branch)
 	}
 
+	// Pin current branch to top
+	for i, b := range branches {
+		if b.Current && i > 0 {
+			branches = append([]BranchInfo{b}, append(branches[:i:i], branches[i+1:]...)...)
+			break
+		}
+	}
+
 	return branches, nil
+}
+
+// getBaseBranch returns "main" if it exists, otherwise "master"
+func getBaseBranch() string {
+	cmd := exec.Command("git", "rev-parse", "--verify", "main")
+	if cmd.Run() == nil {
+		return "main"
+	}
+	return "master"
+}
+
+// branchAheadBehind returns how many commits branch is ahead/behind base
+func branchAheadBehind(branch, base string) (ahead, behind int) {
+	cmd := exec.Command("git", "rev-list", "--left-right", "--count", base+"..."+branch)
+	out, err := cmd.Output()
+	if err != nil {
+		return 0, 0
+	}
+	parts := strings.Fields(strings.TrimSpace(string(out)))
+	if len(parts) != 2 {
+		return 0, 0
+	}
+	behind, _ = strconv.Atoi(parts[0])
+	ahead, _ = strconv.Atoi(parts[1])
+	return ahead, behind
 }
 
 // CreateBranch creates a new branch
@@ -764,6 +778,7 @@ type TagInfo struct {
 	ShortHash    string
 	Message      string
 	RelativeTime string
+	Author       string
 }
 
 // CommitWithStats represents a commit with change statistics
@@ -783,7 +798,7 @@ func GetTags() ([]TagInfo, error) {
 	// Use for-each-ref to get tag info sorted by creatordate descending
 	cmd := exec.Command("git", "for-each-ref",
 		"--sort=-creatordate",
-		"--format=%(refname:short)|%(objectname:short)|%(subject)|%(creatordate:relative)",
+		"--format=%(refname:short)|%(objectname:short)|%(subject)|%(creatordate:relative)|%(taggername)%(*authorname)",
 		"refs/tags")
 	output, err := cmd.Output()
 	if err != nil {
@@ -801,8 +816,8 @@ func GetTags() ([]TagInfo, error) {
 		if line == "" {
 			continue
 		}
-		parts := strings.SplitN(line, "|", 4)
-		if len(parts) < 4 {
+		parts := strings.SplitN(line, "|", 5)
+		if len(parts) < 5 {
 			continue
 		}
 
@@ -811,6 +826,7 @@ func GetTags() ([]TagInfo, error) {
 			ShortHash:    parts[1],
 			Message:      parts[2],
 			RelativeTime: parts[3],
+			Author:       parts[4],
 		})
 	}
 

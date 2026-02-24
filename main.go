@@ -409,8 +409,13 @@ func main() {
 			}
 		}
 
-		// Run the TUI
-		p := tea.NewProgram(initialBranchModel(mode, branchName), tea.WithAltScreen())
+		// List mode runs inline (no fullscreen), other modes use alt screen
+		var p *tea.Program
+		if mode == "list" {
+			p = tea.NewProgram(initialBranchModel(mode, branchName))
+		} else {
+			p = tea.NewProgram(initialBranchModel(mode, branchName), tea.WithAltScreen())
+		}
 		if _, err := p.Run(); err != nil {
 			fmt.Printf("Error: %v\n", err)
 			os.Exit(1)

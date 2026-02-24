@@ -50,7 +50,7 @@ type syncPushMsg struct {
 func initialSyncModel(pullOnly bool) syncModel {
 	s := spinner.New()
 	s.Spinner = spinner.Dot
-	s.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("#7D56F4"))
+	s.Style = lipgloss.NewStyle().Foreground(colorPrimary)
 
 	return syncModel{
 		state:    syncStateChecking,
@@ -133,8 +133,8 @@ func (m syncModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m syncModel) View() string {
-	successStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#04B575"))
-	errorStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#FF0000"))
+	successStyle := lipgloss.NewStyle().Foreground(colorSuccess)
+	errorStyle := lipgloss.NewStyle().Foreground(colorError)
 
 	switch m.state {
 	case syncStateChecking:
