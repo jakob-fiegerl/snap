@@ -47,7 +47,6 @@ snap branch                Manage branches interactively
 snap replay main           Rebase onto another branch
 snap reword                Reword a commit message
 snap tag                   List, inspect, diff, or create tags
-snap space                 Manage workspaces (isolated dev environments)
 ```
 
 Run `snap <command> --help` for details on any command.
@@ -66,62 +65,12 @@ Run `snap <command> --help` for details on any command.
 | `git commit --amend -m "new msg"` | `snap reword` |
 | `git tag -l` | `snap tag` |
 | `git show v1.0.0` | `snap tag inspect v1.0.0` |
-| `git worktree add ...` | `snap space new <name>` |
 
 ## 📋 Requirements
 
 - **Go** 1.24.1+
 - **Git**
 - **Ollama** + qwen2.5:1.5b *(optional, for AI commit messages)*
-
-## 🌐 Workspaces
-
-Workspaces let you work on multiple features in parallel without git stash. Each workspace is an isolated directory with its own working tree.
-
-### Commands
-
-```bash
-snap space new <name>              # Create workspace from current branch
-snap space new my-feature --from main  # Create workspace from main
-snap space switch my-feature       # Get path to workspace
-snap space list                    # List all workspaces
-snap space merge my-feature        # Merge workspace into base branch
-snap space merge my-feature --into main  # Merge workspace into main
-```
-
-### How it works
-
-When you create a workspace:
-1. Creates git branch: `workspace/my-feature`
-2. Creates worktree: `workspaces/my-feature/`
-3. Saves metadata: `.snap/workspaces/my-feature.json`
-
-**Directory structure:**
-```
-your-repo/
-  src/              # main working directory
-  workspaces/
-    my-feature/     # isolated workspace directory
-      src/          # independent copy of code
-```
-
-**Metadata:**
-```json
-{
-  "name": "my-feature",
-  "branch": "workspace/my-feature",
-  "base_branch": "main",
-  "base_commit": "abc123"
-}
-```
-
-### Benefits
-
-- **No git stash needed** - each workspace is a separate directory
-- **Switch instantly** - just `cd` to the workspace directory
-- **Work in parallel** - edit multiple features simultaneously
-- **Clean separation** - uncommitted changes stay in their workspace
-
 
 ## 📄 License
 

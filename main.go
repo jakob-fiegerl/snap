@@ -3,38 +3,96 @@ package main
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 )
 
 const version = "1.0.0"
 
 func printHelp() {
-	help := `Snap - AI-Powered Git Snapshot Tool
+	brandStyle := lipgloss.NewStyle().Foreground(colorPrimary).Bold(true)
+	taglineStyle := lipgloss.NewStyle().Foreground(colorMuted)
+	sectionStyle := lipgloss.NewStyle().Foreground(colorSecondary).Bold(true)
+	cmdStyle := lipgloss.NewStyle().Foreground(colorPrimary)
+	argStyle := lipgloss.NewStyle().Foreground(colorMuted)
+	descStyle := lipgloss.NewStyle().Foreground(colorText)
+	tipStyle := lipgloss.NewStyle().Foreground(colorMuted).Italic(true)
 
-Usage: snap <command> [options]
+	type row struct {
+		name string
+		args string
+		desc string
+	}
 
-Commands:
-    init              Initialize a new repository
-    save [message]    Save changes with AI-generated or custom message
-    status            Show repository status and changes
-    sync              Smart push/pull with remote
-    log               Show commit history as a visual timeline
-    branch            Manage branches
-    replay <branch>   Replay commits onto another branch (rebase)
-    reword [commit]   Reword a commit message
-    tag               Manage tags
-    space             Manage workspaces
+	cmds := []row{
+		{"init", "", "Initialize a new repository"},
+		{"status", "", "Show repository status and changes"},
+		{"save", "[message]", "Save changes with AI-generated or custom message"},
+		{"log", "", "Show commit history as a visual timeline"},
+		{"sync", "", "Smart push/pull with remote"},
+		{"branch", "", "Manage branches"},
+		{"replay", "<branch>", "Replay commits onto another branch"},
+		{"reword", "[commit]", "Reword a commit message"},
+		{"tag", "", "Manage tags"},
+	}
 
-    help, --help      Show this help message
-    version           Show version information
+	meta := []row{
+		{"version", "", "Show version information"},
+		{"<command>", "--help", "Show help for a specific command"},
+	}
 
-Run 'snap <command> --help' for more information on a command.
-`
-	fmt.Println(help)
+	// Compute column width from the longest name+args pair
+	colWidth := 0
+	for _, r := range append(cmds, meta...) {
+		w := len(r.name)
+		if r.args != "" {
+			w += 1 + len(r.args)
+		}
+		if w > colWidth {
+			colWidth = w
+		}
+	}
+	colWidth += 4 // right padding before description
+
+	renderRow := func(r row) string {
+		// Compute padding based on visible text length (before styling)
+		plain := r.name
+		if r.args != "" {
+			plain += " " + r.args
+		}
+		pad := strings.Repeat(" ", colWidth-len(plain))
+
+		styled := cmdStyle.Render(r.name)
+		if r.args != "" {
+			styled += " " + argStyle.Render(r.args)
+		}
+		return "    " + styled + pad + descStyle.Render(r.desc)
+	}
+
+	var sb strings.Builder
+	sb.WriteString("\n")
+	sb.WriteString(fmt.Sprintf("  %s  %s\n", brandStyle.Render("◆ snap"), taglineStyle.Render("v"+version)))
+	sb.WriteString(fmt.Sprintf("  %s\n", taglineStyle.Render("AI-powered Git, simplified.")))
+	sb.WriteString("\n")
+	sb.WriteString(fmt.Sprintf("  %s\n", sectionStyle.Render("COMMANDS")))
+	sb.WriteString("\n")
+	for _, r := range cmds {
+		sb.WriteString(renderRow(r) + "\n")
+	}
+	sb.WriteString("\n")
+	sb.WriteString(fmt.Sprintf("  %s\n", sectionStyle.Render("MORE")))
+	sb.WriteString("\n")
+	for _, r := range meta {
+		sb.WriteString(renderRow(r) + "\n")
+	}
+	sb.WriteString("\n")
+	sb.WriteString(fmt.Sprintf("  %s\n", tipStyle.Render("Tip: run 'snap save' to snapshot your work with an AI commit message.")))
+	sb.WriteString("\n")
+
+	fmt.Print(sb.String())
 }
 
 func printVersion() {
@@ -183,25 +241,6 @@ Interactive controls:
   Esc                 Cancel and exit`)
 }
 
-func printSpaceHelp() {
-	fmt.Println(`Usage: snap space [SUBCOMMAND] [OPTIONS]
-
-Manage workspaces - create isolated development environments using git worktrees.
-
-Subcommands:
-  new <name>              Create a new workspace
-  switch <name>           Switch to an existing workspace
-  list                    List all workspaces
-  merge <name> [--into]   Merge a workspace
-
-Examples:
-  snap space new my-feature              Create workspace from current branch
-  snap space new my-feature --from main  Create workspace from main
-  snap space switch my-feature           Switch to workspace
-  snap space list                        List all workspaces
-  snap space merge my-feature            Merge workspace into base branch
-  snap space merge my-feature --into main  Merge workspace into main`)
-}
 
 func main() {
 	seed := 42
@@ -559,156 +598,6 @@ func main() {
 			}
 		}
 		os.Exit(0)
-
-	case "space":
-		if hasHelpFlag() {
-			printSpaceHelp()
-			os.Exit(0)
-		}
-
-		// Parse subcommand
-		if len(os.Args) < 3 {
-			fmt.Println("Error: subcommand required")
-			fmt.Println("\nValid subcommands: new, switch, list, merge")
-			fmt.Println("Run 'snap space --help' for more information")
-			os.Exit(1)
-		}
-
-		subcommand := os.Args[2]
-
-		switch subcommand {
-		case "new":
-			// Parse workspace name and options
-			if len(os.Args) < 4 {
-				fmt.Println("Error: workspace name required")
-				fmt.Println("Usage: snap space new <name> [--from branch]")
-				fmt.Println("\nExample:")
-				fmt.Println("  snap space new my-feature")
-				fmt.Println("  snap space new my-feature --from main")
-				os.Exit(1)
-			}
-
-			workspaceName := os.Args[3]
-			baseBranch := ""
-
-			// Parse --from flag
-			for i := 4; i < len(os.Args); i++ {
-				if os.Args[i] == "--from" && i+1 < len(os.Args) {
-					baseBranch = os.Args[i+1]
-					break
-				}
-			}
-
-			fmt.Printf("📂 Creating workspace '%s'...\n", workspaceName)
-
-			if err := CreateWorkspace(workspaceName, baseBranch); err != nil {
-				fmt.Printf("Error: %v\n", err)
-				os.Exit(1)
-			}
-
-			workspaceDir, _ := GetWorkspaceDir()
-			workspacePath := filepath.Join(workspaceDir, workspaceName)
-
-			fmt.Println("✓ Workspace created!")
-			fmt.Printf("\nNext steps:\n")
-			fmt.Printf("  cd %s\n", workspacePath)
-			fmt.Printf("  # Make your changes\n")
-			fmt.Printf("  snap save \"your changes\"\n")
-			fmt.Printf("  snap space merge %s\n", workspaceName)
-			os.Exit(0)
-
-		case "switch":
-			// Parse workspace name
-			if len(os.Args) < 4 {
-				fmt.Println("Error: workspace name required")
-				fmt.Println("Usage: snap space switch <name>")
-				fmt.Println("\nExample:")
-				fmt.Println("  snap space switch my-feature")
-				os.Exit(1)
-			}
-
-			workspaceName := os.Args[3]
-			workspacePath, err := SwitchToWorkspace(workspaceName)
-			if err != nil {
-				fmt.Printf("Error: %v\n", err)
-				os.Exit(1)
-			}
-
-			fmt.Printf("✓ Workspace found at: %s\n", workspacePath)
-			fmt.Printf("\nTo switch to this workspace, run:\n")
-			fmt.Printf("  cd %s\n", workspacePath)
-			os.Exit(0)
-
-		case "list":
-			workspaces, err := ListWorkspaces()
-			if err != nil {
-				fmt.Printf("Error: %v\n", err)
-				os.Exit(1)
-			}
-
-			if len(workspaces) == 0 {
-				fmt.Println("No workspaces found")
-				fmt.Println("\nCreate a new workspace with:")
-				fmt.Println("  snap space new <name>")
-				os.Exit(0)
-			}
-
-			// Get current workspace
-			currentWorkspace, _ := GetCurrentWorkspace()
-
-			fmt.Println("📂 Workspaces:")
-			fmt.Println()
-
-			for _, ws := range workspaces {
-				prefix := "  "
-				if ws.Name == currentWorkspace {
-					prefix = "* "
-				}
-				fmt.Printf("%s%s (from %s)\n", prefix, ws.Name, ws.BaseBranch)
-			}
-
-			fmt.Println()
-			fmt.Printf("Total: %d workspace(s)\n", len(workspaces))
-			os.Exit(0)
-
-		case "merge":
-			// Parse workspace name and options
-			if len(os.Args) < 4 {
-				fmt.Println("Error: workspace name required")
-				fmt.Println("Usage: snap space merge <name> [--into branch]")
-				fmt.Println("\nExample:")
-				fmt.Println("  snap space merge my-feature")
-				fmt.Println("  snap space merge my-feature --into main")
-				os.Exit(1)
-			}
-
-			workspaceName := os.Args[3]
-			targetBranch := ""
-
-			// Parse --into flag
-			for i := 4; i < len(os.Args); i++ {
-				if os.Args[i] == "--into" && i+1 < len(os.Args) {
-					targetBranch = os.Args[i+1]
-					break
-				}
-			}
-
-			fmt.Printf("🔀 Merging workspace '%s'...\n", workspaceName)
-
-			if err := MergeWorkspace(workspaceName, targetBranch); err != nil {
-				fmt.Printf("Error: %v\n", err)
-				os.Exit(1)
-			}
-
-			fmt.Println("✓ Workspace merged and deleted!")
-			os.Exit(0)
-
-		default:
-			fmt.Printf("Error: unknown subcommand '%s'\n", subcommand)
-			fmt.Println("\nValid subcommands: new, switch, list, merge")
-			fmt.Println("Run 'snap space --help' for more information")
-			os.Exit(1)
-		}
 
 	case "save":
 		if hasHelpFlag() {

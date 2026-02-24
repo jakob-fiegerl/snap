@@ -955,9 +955,11 @@ func (m replayModel) View() string {
 		s.WriteString(infoStyle.Render(fmt.Sprintf("The following %d commit(s) will be replayed:", len(m.commits))))
 		s.WriteString("\n\n")
 
-		commitStyle := lipgloss.NewStyle().Foreground(colorPrimary).Bold(true)
+		bulletStyle := lipgloss.NewStyle().Foreground(colorPrimary).Bold(true)
 		hashStyle := lipgloss.NewStyle().Foreground(colorMuted)
 		timeStyle := lipgloss.NewStyle().Foreground(colorMuted)
+		msgStyle := lipgloss.NewStyle().Foreground(colorText)
+		pipeStyle := lipgloss.NewStyle().Foreground(colorPrimary)
 		contentStyle := lipgloss.NewStyle().PaddingLeft(2)
 
 		// Show commits in reverse order (oldest first, as they'll be applied)
@@ -965,13 +967,13 @@ func (m replayModel) View() string {
 		for i := len(m.commits) - 1; i >= 0; i-- {
 			commit := m.commits[i]
 			content.WriteString(fmt.Sprintf("%s %s %s\n",
-				commitStyle.Render("●"),
-				commit.Message,
+				bulletStyle.Render("●"),
+				msgStyle.Render(commit.Message),
 				timeStyle.Render(fmt.Sprintf("(%s)", commit.RelativeTime)),
 			))
 			content.WriteString(fmt.Sprintf("  %s\n", hashStyle.Render(commit.ShortHash)))
 			if i > 0 {
-				content.WriteString(commitStyle.Render("│") + "\n")
+				content.WriteString(pipeStyle.Render("│") + "\n")
 			}
 		}
 		s.WriteString(contentStyle.Render(content.String()))
@@ -1330,6 +1332,7 @@ func (m stackModel) View() string {
 			timeStyle := lipgloss.NewStyle().Foreground(colorMuted)
 			hashStyle := lipgloss.NewStyle().Foreground(colorMuted)
 			authorStyle := lipgloss.NewStyle().Foreground(colorMuted)
+			msgStyle := lipgloss.NewStyle().Foreground(colorText)
 			cursorStyle := lipgloss.NewStyle().Foreground(colorPrimary).Bold(true)
 			pipeStyle := lipgloss.NewStyle().Foreground(colorPrimary)
 
@@ -1344,7 +1347,7 @@ func (m stackModel) View() string {
 					cursor,
 					commitStyle.Render("●"),
 					timeStyle.Render(commit.RelativeTime),
-					commit.Message,
+					msgStyle.Render(commit.Message),
 				))
 
 				// Show hash and author
@@ -1717,7 +1720,7 @@ func (m tagsModel) View() string {
 		if len(tags) == 0 {
 			content.WriteString("No tags match filter")
 		} else {
-			tagStyle := lipgloss.NewStyle().Foreground(colorText).Bold(true)
+			tagStyle := lipgloss.NewStyle().Foreground(colorPrimary).Bold(true)
 			dimStyle := lipgloss.NewStyle().Foreground(colorMuted)
 			cursorStyle := lipgloss.NewStyle().Foreground(colorPrimary).Bold(true)
 
@@ -1939,7 +1942,7 @@ func (m tagsDiffModel) View() string {
 		}
 
 		// Build commits content for viewport
-		hashStyle := lipgloss.NewStyle().Foreground(colorSecondary)
+		hashStyle := lipgloss.NewStyle().Foreground(colorMuted)
 		msgStyle := lipgloss.NewStyle().Foreground(colorText)
 		timeStyle := lipgloss.NewStyle().Foreground(colorMuted)
 		cursorStyle := lipgloss.NewStyle().Foreground(colorPrimary).Bold(true)
@@ -2262,7 +2265,7 @@ func (m tagsCreateModel) View() string {
 			s.WriteString("\n\n")
 
 			// Commits
-			hashStyle := lipgloss.NewStyle().Foreground(colorSecondary)
+			hashStyle := lipgloss.NewStyle().Foreground(colorMuted)
 			msgStyle := lipgloss.NewStyle().Foreground(colorText)
 			timeStyle := lipgloss.NewStyle().Foreground(colorMuted)
 			cursorStyle := lipgloss.NewStyle().Foreground(colorPrimary).Bold(true)
@@ -2498,7 +2501,7 @@ func (m tagsInspectModel) View() string {
 			PaddingLeft(2)
 		addStyle := lipgloss.NewStyle().Foreground(colorSuccess)
 		delStyle := lipgloss.NewStyle().Foreground(colorError)
-		commitHashStyle := lipgloss.NewStyle().Foreground(colorSecondary)
+		commitHashStyle := lipgloss.NewStyle().Foreground(colorMuted)
 		msgStyle := lipgloss.NewStyle().Foreground(colorText)
 		timeStyle := lipgloss.NewStyle().Foreground(colorMuted)
 		cursorStyle := lipgloss.NewStyle().Foreground(colorPrimary).Bold(true)
@@ -2783,11 +2786,12 @@ func (m rewordModel) View() string {
 		return fmt.Sprintf("%s Loading commit message...", m.spinner.View())
 
 	case rewordStateEditing:
+		msgStyle := lipgloss.NewStyle().Foreground(colorText)
 		var s strings.Builder
 		s.WriteString(titleStyle.Render("📝 Reword Commit Message"))
 		s.WriteString("\n\n")
 		s.WriteString(infoStyle.Render("Original: "))
-		s.WriteString(m.originalMsg)
+		s.WriteString(msgStyle.Render(m.originalMsg))
 		s.WriteString("\n\n")
 		s.WriteString(m.textInput.View())
 		s.WriteString("\n\n")
@@ -2795,16 +2799,17 @@ func (m rewordModel) View() string {
 		return s.String()
 
 	case rewordStateConfirming:
+		msgStyle := lipgloss.NewStyle().Foreground(colorText)
 		var s strings.Builder
 		s.WriteString(titleStyle.Render("📝 Confirm New Message"))
 		s.WriteString("\n\n")
 		s.WriteString(infoStyle.Render("Original: "))
-		s.WriteString(m.originalMsg)
+		s.WriteString(msgStyle.Render(m.originalMsg))
 		s.WriteString("\n\n")
 		s.WriteString(highlightStyle.Render("New message: "))
-		s.WriteString(m.newMsg)
+		s.WriteString(msgStyle.Render(m.newMsg))
 		s.WriteString("\n\n")
-		s.WriteString("Proceed with reword? [y/n] ")
+		s.WriteString(highlightStyle.Render("Proceed with reword? [y/n] "))
 		return s.String()
 
 	case rewordStateAmending:
