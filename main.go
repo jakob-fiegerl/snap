@@ -109,153 +109,229 @@ func hasHelpFlag() bool {
 	return false
 }
 
+// helpRow is a single row in a help section: a name (colored primary) and optional description (muted).
+// If name is empty, only desc is rendered (useful for bullet-style info lines).
+type helpRow struct {
+	name string
+	desc string
+}
+
+// helpSection is a titled group of rows in a command help screen.
+type helpSection struct {
+	title string
+	rows  []helpRow
+}
+
+// renderCommandHelp builds a styled help string for a sub-command.
+func renderCommandHelp(name, args, desc string, sections []helpSection) string {
+	snapStyle := lipgloss.NewStyle().Foreground(colorMuted)
+	cmdStyle := lipgloss.NewStyle().Foreground(colorPrimary).Bold(true)
+	argsStyle := lipgloss.NewStyle().Foreground(colorMuted)
+	descStyle := lipgloss.NewStyle().Foreground(colorText)
+	sectionStyle := lipgloss.NewStyle().Foreground(colorMuted).Bold(true)
+	nameStyle := lipgloss.NewStyle().Foreground(colorText)
+	metaStyle := lipgloss.NewStyle().Foreground(colorMuted)
+
+	var sb strings.Builder
+	sb.WriteString("\n")
+
+	usageLine := snapStyle.Render("snap") + " " + cmdStyle.Render(name)
+	if args != "" {
+		usageLine += " " + argsStyle.Render(args)
+	}
+	sb.WriteString("  " + usageLine + "\n")
+	sb.WriteString("\n")
+	sb.WriteString("  " + descStyle.Render(desc) + "\n")
+
+	for _, section := range sections {
+		sb.WriteString("\n")
+		sb.WriteString("  " + sectionStyle.Render(section.title) + "\n")
+		sb.WriteString("\n")
+
+		// Compute column width only from rows that have both name and desc
+		colWidth := 0
+		for _, row := range section.rows {
+			if row.name != "" && row.desc != "" && len(row.name) > colWidth {
+				colWidth = len(row.name)
+			}
+		}
+		colWidth += 4
+
+		for _, row := range section.rows {
+			switch {
+			case row.name != "" && row.desc != "":
+				pad := strings.Repeat(" ", colWidth-len(row.name))
+				sb.WriteString("    " + nameStyle.Render(row.name) + pad + metaStyle.Render(row.desc) + "\n")
+			case row.name != "":
+				sb.WriteString("    " + nameStyle.Render(row.name) + "\n")
+			default:
+				sb.WriteString("    " + metaStyle.Render(row.desc) + "\n")
+			}
+		}
+	}
+
+	sb.WriteString("\n")
+	return sb.String()
+}
+
 func printInitHelp() {
-	fmt.Println(`Usage: snap init
-
-Initialize a new git repository in the current directory.
-
-Example:
-  snap init`)
+	fmt.Print(renderCommandHelp("init", "", "Initialize a new git repository in the current directory.",
+		[]helpSection{
+			{title: "EXAMPLE", rows: []helpRow{
+				{name: "snap init"},
+			}},
+		},
+	))
 }
 
 func printStatusHelp() {
-	fmt.Println(`Usage: snap status
-
-Show repository status including current branch, last commit, and all changes.
-
-Displays:
-  - Current branch name
-  - Last commit information (hash, message, date)
-  - Staged changes (ready to commit)
-  - Unstaged changes (modified but not staged)
-  - Untracked files (new files not in git)
-
-Example:
-  snap status`)
+	fmt.Print(renderCommandHelp("status", "", "Show repository status including current branch and all changes.",
+		[]helpSection{
+			{title: "SHOWS", rows: []helpRow{
+				{desc: "Current branch name"},
+				{desc: "Last commit information (hash, message, date)"},
+				{desc: "Staged changes (ready to commit)"},
+				{desc: "Unstaged changes (modified but not staged)"},
+				{desc: "Untracked files (new files not in git)"},
+			}},
+			{title: "EXAMPLE", rows: []helpRow{
+				{name: "snap status"},
+			}},
+		},
+	))
 }
 
 func printSaveHelp() {
-	fmt.Println(`Usage: snap save [MESSAGE] [OPTIONS]
-
-Save changes with an AI-generated or custom commit message.
-
-Options:
-  --seed <number>     Set the seed for reproducible AI messages (default: 42)
-  --message, -m       Custom commit message (alternative to positional argument)
-
-Examples:
-  snap save                    Save with AI-generated message
-  snap save "fix: bug"         Save with custom message
-  snap save -m "fix: bug"      Save with custom message (flag style)
-  snap save --seed 123         Use a custom seed for AI generation`)
+	fmt.Print(renderCommandHelp("save", "[message]", "Save changes with an AI-generated or custom commit message.",
+		[]helpSection{
+			{title: "OPTIONS", rows: []helpRow{
+				{name: "--seed <number>", desc: "Set the seed for reproducible AI messages (default: 42)"},
+				{name: "--message, -m", desc: "Custom commit message (alternative to positional argument)"},
+			}},
+			{title: "EXAMPLES", rows: []helpRow{
+				{name: "snap save", desc: "Save with AI-generated message"},
+				{name: `snap save "fix: bug"`, desc: "Save with custom message"},
+				{name: `snap save -m "fix: bug"`, desc: "Save with custom message (flag style)"},
+				{name: "snap save --seed 123", desc: "Use a custom seed for AI generation"},
+			}},
+		},
+	))
 }
 
 func printSyncHelp() {
-	fmt.Println(`Usage: snap sync [OPTIONS]
-
-Smart push/pull - sync with remote repository.
-
-Options:
-  --from    Only pull changes from remote (skip push)
-
-Examples:
-  snap sync          Push and pull changes automatically
-  snap sync --from   Only pull changes from remote`)
+	fmt.Print(renderCommandHelp("sync", "[options]", "Smart push/pull — sync with remote repository.",
+		[]helpSection{
+			{title: "OPTIONS", rows: []helpRow{
+				{name: "--from", desc: "Only pull changes from remote (skip push)"},
+			}},
+			{title: "EXAMPLES", rows: []helpRow{
+				{name: "snap sync", desc: "Push and pull changes automatically"},
+				{name: "snap sync --from", desc: "Only pull changes from remote"},
+			}},
+		},
+	))
 }
 
 func printStackHelp() {
-	fmt.Println(`Usage: snap log [FILE] [OPTIONS]
-
-Show commit history as a visual timeline.
-
-Options:
-  --all       Include all branches
-  --mine      Show only your commits
-  --plain     Non-interactive mode (for piping/scripts)
-
-Examples:
-  snap log               Interactive commit history viewer
-  snap log --all         Include all branches
-  snap log --mine        Show only your commits
-  snap log --plain       Non-interactive mode
-  snap log README.md     Show history for a specific file`)
+	fmt.Print(renderCommandHelp("log", "[file] [options]", "Show commit history as a visual timeline.",
+		[]helpSection{
+			{title: "OPTIONS", rows: []helpRow{
+				{name: "--all", desc: "Include all branches"},
+				{name: "--mine", desc: "Show only your commits"},
+				{name: "--plain", desc: "Non-interactive mode (for piping/scripts)"},
+			}},
+			{title: "EXAMPLES", rows: []helpRow{
+				{name: "snap log", desc: "Interactive commit history viewer"},
+				{name: "snap log --all", desc: "Include all branches"},
+				{name: "snap log --mine", desc: "Show only your commits"},
+				{name: "snap log --plain", desc: "Non-interactive mode"},
+				{name: "snap log README.md", desc: "Show history for a specific file"},
+			}},
+		},
+	))
 }
 
 func printBranchHelp() {
-	fmt.Println(`Usage: snap branch [SUBCOMMAND] [OPTIONS]
-
-Manage branches - list, create, switch, or delete.
-
-Subcommands:
-  new, create       Create and switch to a new branch
-  switch, checkout   Switch to an existing branch
-  delete, remove     Delete a branch
-
-Examples:
-  snap branch                  List all branches (interactive)
-  snap branch new feature      Create and switch to 'feature' branch
-  snap branch switch main      Switch to 'main' branch
-  snap branch delete feature   Delete 'feature' branch`)
+	fmt.Print(renderCommandHelp("branch", "[subcommand]", "Manage branches — list, create, switch, or delete.",
+		[]helpSection{
+			{title: "SUBCOMMANDS", rows: []helpRow{
+				{name: "new, create", desc: "Create and switch to a new branch"},
+				{name: "switch, checkout", desc: "Switch to an existing branch"},
+				{name: "delete, remove", desc: "Delete a branch"},
+			}},
+			{title: "EXAMPLES", rows: []helpRow{
+				{name: "snap branch", desc: "List all branches (interactive)"},
+				{name: "snap branch new feature", desc: "Create and switch to 'feature' branch"},
+				{name: "snap branch switch main", desc: "Switch to 'main' branch"},
+				{name: "snap branch delete feature", desc: "Delete 'feature' branch"},
+			}},
+		},
+	))
 }
 
 func printReplayHelp() {
-	fmt.Println(`Usage: snap replay <branch> [OPTIONS]
-
-Replay commits onto another branch (rebase).
-
-Options:
-  --interactive, -i   Interactive replay (not yet implemented)
-
-Examples:
-  snap replay main       Replay current branch commits onto main
-  snap replay main -i    Interactive replay`)
+	fmt.Print(renderCommandHelp("replay", "<branch> [options]", "Replay commits onto another branch (rebase).",
+		[]helpSection{
+			{title: "OPTIONS", rows: []helpRow{
+				{name: "--interactive, -i", desc: "Interactive replay (not yet implemented)"},
+			}},
+			{title: "EXAMPLES", rows: []helpRow{
+				{name: "snap replay main", desc: "Replay current branch commits onto main"},
+				{name: "snap replay main -i", desc: "Interactive replay"},
+			}},
+		},
+	))
 }
 
 func printTagHelp() {
-	fmt.Println(`Usage: snap tag [SUBCOMMAND]
-
-Manage tags - list, inspect, diff, or create.
-
-Subcommands:
-  inspect <tag>       Inspect a tag (commits, stats, metadata)
-  diff                Show commits since last tag
-  create <version>    Create and push a new annotated tag
-
-Examples:
-  snap tag                     List all tags interactively
-  snap tag inspect v1.0.0      Inspect a specific tag
-  snap tag diff                Show commits since last tag
-  snap tag create v1.0.0       Create and push a new tag`)
+	fmt.Print(renderCommandHelp("tag", "[subcommand]", "Manage tags — list, inspect, diff, or create.",
+		[]helpSection{
+			{title: "SUBCOMMANDS", rows: []helpRow{
+				{name: "inspect <tag>", desc: "Inspect a tag (commits, stats, metadata)"},
+				{name: "diff", desc: "Show commits since last tag"},
+				{name: "create <version>", desc: "Create and push a new annotated tag"},
+			}},
+			{title: "EXAMPLES", rows: []helpRow{
+				{name: "snap tag", desc: "List all tags interactively"},
+				{name: "snap tag inspect v1.0.0", desc: "Inspect a specific tag"},
+				{name: "snap tag diff", desc: "Show commits since last tag"},
+				{name: "snap tag create v1.0.0", desc: "Create and push a new tag"},
+			}},
+		},
+	))
 }
 
 func printRewordHelp() {
-	fmt.Println(`Usage: snap reword [COMMIT]
-
-Reword a commit message - edit the most recent commit or a specific one.
-
-Examples:
-  snap reword                  Reword the most recent commit
-  snap reword abc123           Reword a specific commit (hash)
-
-Interactive controls:
-  Enter               Confirm and apply the new message
-  Esc                 Cancel and exit`)
+	fmt.Print(renderCommandHelp("reword", "[commit]", "Reword a commit message — edit the most recent commit or a specific one.",
+		[]helpSection{
+			{title: "EXAMPLES", rows: []helpRow{
+				{name: "snap reword", desc: "Reword the most recent commit"},
+				{name: "snap reword abc123", desc: "Reword a specific commit (hash)"},
+			}},
+			{title: "CONTROLS", rows: []helpRow{
+				{name: "Enter", desc: "Confirm and apply the new message"},
+				{name: "Esc", desc: "Cancel and exit"},
+			}},
+		},
+	))
 }
 
 func printMRHelp() {
-	fmt.Println(`Usage: snap mr [SUBCOMMAND]
-
-Open pull request or merge request in your browser.
-
-Subcommands:
-  (none)     Open existing PR/MR for the current branch
-  create     Open PR/MR creation page for the current branch
-
-Supports GitHub, GitLab Cloud, and GitLab self-hosted.
-
-Examples:
-  snap mr           Open current branch's PR/MR
-  snap mr create    Open PR/MR creation page`)
+	fmt.Print(renderCommandHelp("mr", "[subcommand]", "Open a pull request or merge request in your browser.",
+		[]helpSection{
+			{title: "SUBCOMMANDS", rows: []helpRow{
+				{name: "(none)", desc: "Open existing PR/MR for the current branch"},
+				{name: "create", desc: "Open PR/MR creation page for the current branch"},
+			}},
+			{title: "NOTES", rows: []helpRow{
+				{desc: "Supports GitHub, GitLab Cloud, and GitLab self-hosted."},
+			}},
+			{title: "EXAMPLES", rows: []helpRow{
+				{name: "snap mr", desc: "Open current branch's PR/MR"},
+				{name: "snap mr create", desc: "Open PR/MR creation page"},
+			}},
+		},
+	))
 }
 
 
