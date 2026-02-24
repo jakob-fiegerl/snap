@@ -42,7 +42,7 @@ snap save "fixed the bug"  Save your changes
 snap save                  Save with an AI-generated message 🤖
 snap status                Beautiful status with branch, commit info & changes
 snap sync                  Pull + push in one go
-snap stack                 Browse your commit history
+snap log                   Browse your commit history
 snap branch                Manage branches interactively
 snap replay main           Rebase onto another branch
 snap reword                Reword a commit message
@@ -60,7 +60,7 @@ Run `snap <command> --help` for details on any command.
 | `git status` | `snap status` |
 | `git add . && git commit -m "msg"` | `snap save "msg"` |
 | `git pull && git push` | `snap sync` |
-| `git log` | `snap stack` |
+| `git log` | `snap log` |
 | `git checkout -b feature` | `snap branch new feature` |
 | `git rebase main` | `snap replay main` |
 | `git commit --amend -m "new msg"` | `snap reword` |

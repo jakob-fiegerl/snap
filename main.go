@@ -22,7 +22,7 @@ Commands:
     save [message]    Save changes with AI-generated or custom message
     status            Show repository status and changes
     sync              Smart push/pull with remote
-    stack             Show commit history as a visual timeline
+    log               Show commit history as a visual timeline
     branch            Manage branches
     replay <branch>   Replay commits onto another branch (rebase)
     reword [commit]   Reword a commit message
@@ -105,7 +105,7 @@ Examples:
 }
 
 func printStackHelp() {
-	fmt.Println(`Usage: snap stack [FILE] [OPTIONS]
+	fmt.Println(`Usage: snap log [FILE] [OPTIONS]
 
 Show commit history as a visual timeline.
 
@@ -115,11 +115,11 @@ Options:
   --plain     Non-interactive mode (for piping/scripts)
 
 Examples:
-  snap stack               Interactive commit history viewer
-  snap stack --all         Include all branches
-  snap stack --mine        Show only your commits
-  snap stack --plain       Non-interactive mode
-  snap stack README.md     Show history for a specific file`)
+  snap log               Interactive commit history viewer
+  snap log --all         Include all branches
+  snap log --mine        Show only your commits
+  snap log --plain       Non-interactive mode
+  snap log README.md     Show history for a specific file`)
 }
 
 func printBranchHelp() {
@@ -288,7 +288,7 @@ func main() {
 		}
 		os.Exit(0)
 
-	case "stack":
+	case "log":
 		if hasHelpFlag() {
 			printStackHelp()
 			os.Exit(0)
@@ -352,7 +352,7 @@ func main() {
 		defer func() {
 			if r := recover(); r != nil {
 				fmt.Fprintf(os.Stderr, "Fatal error in interactive mode: %v\n", r)
-				fmt.Fprintf(os.Stderr, "Tip: Use 'snap stack --plain' for non-interactive mode\n\n")
+				fmt.Fprintf(os.Stderr, "Tip: Use 'snap log --plain' for non-interactive mode\n\n")
 				os.Exit(1)
 			}
 		}()
@@ -361,7 +361,7 @@ func main() {
 		if _, err := p.Run(); err != nil {
 			// If TUI fails, fall back to plain mode
 			fmt.Fprintf(os.Stderr, "Interactive mode failed: %v\n", err)
-			fmt.Fprintf(os.Stderr, "Tip: Use 'snap stack --plain' for non-interactive mode\n\n")
+			fmt.Fprintf(os.Stderr, "Tip: Use 'snap log --plain' for non-interactive mode\n\n")
 			os.Exit(1)
 		}
 		os.Exit(0)
