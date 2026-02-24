@@ -2,7 +2,9 @@ package main
 
 import (
 	"fmt"
+	neturl "net/url"
 	"os/exec"
+	"runtime"
 	"strconv"
 	"strings"
 
@@ -1243,6 +1245,61 @@ func GetLastCommitMessage() (string, error) {
 		return "", err
 	}
 	return strings.TrimSpace(string(output)), nil
+}
+
+// OpenURL opens a URL in the default system browser (cross-platform)
+func OpenURL(url string) error {
+	var cmd *exec.Cmd
+	switch runtime.GOOS {
+	case "darwin":
+		cmd = exec.Command("open", url)
+	case "linux":
+		cmd = exec.Command("xdg-open", url)
+	case "windows":
+		cmd = exec.Command("cmd", "/c", "start", url)
+	default:
+		return fmt.Errorf("unsupported platform: %s", runtime.GOOS)
+	}
+	return cmd.Run()
+}
+
+// isGitLabURL returns true if the base URL appears to be a GitLab instance
+func isGitLabURL(baseURL string) bool {
+	return strings.Contains(strings.ToLower(baseURL), "gitlab")
+}
+
+// GetMRViewURL returns a URL to search for an open MR/PR for the given branch
+func GetMRViewURL(branch string) (string, error) {
+	remoteURL, err := GetRemoteURL()
+	if err != nil {
+		return "", err
+	}
+	baseURL := remoteToHTTPS(remoteURL)
+	if baseURL == "" {
+		return "", fmt.Errorf("could not parse remote URL: %s", remoteURL)
+	}
+	if isGitLabURL(baseURL) {
+		return baseURL + "/-/merge_requests?scope=all&state=opened&search=" + neturl.QueryEscape(branch), nil
+	}
+	// GitHub (and GitHub-compatible hosts)
+	return baseURL + "/pulls?q=is%3Apr+is%3Aopen+head%3A" + neturl.QueryEscape(branch), nil
+}
+
+// GetMRCreateURL returns a URL to create a new MR/PR for the given branch
+func GetMRCreateURL(branch string) (string, error) {
+	remoteURL, err := GetRemoteURL()
+	if err != nil {
+		return "", err
+	}
+	baseURL := remoteToHTTPS(remoteURL)
+	if baseURL == "" {
+		return "", fmt.Errorf("could not parse remote URL: %s", remoteURL)
+	}
+	if isGitLabURL(baseURL) {
+		return baseURL + "/-/merge_requests/new?merge_request[source_branch]=" + neturl.PathEscape(branch), nil
+	}
+	// GitHub (and GitHub-compatible hosts)
+	return baseURL + "/compare/" + neturl.PathEscape(branch) + "?expand=1", nil
 }
 
 // GetCommitMessage returns the full message of a specific commit

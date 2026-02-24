@@ -828,3 +828,136 @@ func TestGetTagURL(t *testing.T) {
 		})
 	}
 }
+
+func TestIsGitLabURL(t *testing.T) {
+	tests := []struct {
+		baseURL  string
+		expected bool
+	}{
+		{"https://github.com/user/repo", false},
+		{"https://gitlab.com/user/repo", true},
+		{"https://gitlab.mycompany.com/user/repo", true},
+		{"https://mygitlab.internal/user/repo", true},
+		{"https://bitbucket.org/user/repo", false},
+		{"https://GITLAB.COM/user/repo", true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.baseURL, func(t *testing.T) {
+			got := isGitLabURL(tt.baseURL)
+			if got != tt.expected {
+				t.Errorf("isGitLabURL(%q) = %v, want %v", tt.baseURL, got, tt.expected)
+			}
+		})
+	}
+}
+
+func TestGetMRViewURL(t *testing.T) {
+	tests := []struct {
+		name        string
+		remoteURL   string
+		branch      string
+		expectedURL string
+	}{
+		{
+			name:        "GitHub HTTPS",
+			remoteURL:   "https://github.com/user/repo.git",
+			branch:      "feature/my-branch",
+			expectedURL: "https://github.com/user/repo/pulls?q=is%3Apr+is%3Aopen+head%3Afeature%2Fmy-branch",
+		},
+		{
+			name:        "GitHub SSH",
+			remoteURL:   "git@github.com:user/repo.git",
+			branch:      "main",
+			expectedURL: "https://github.com/user/repo/pulls?q=is%3Apr+is%3Aopen+head%3Amain",
+		},
+		{
+			name:        "GitLab Cloud HTTPS",
+			remoteURL:   "https://gitlab.com/user/repo.git",
+			branch:      "feature/my-branch",
+			expectedURL: "https://gitlab.com/user/repo/-/merge_requests?scope=all&state=opened&search=feature%2Fmy-branch",
+		},
+		{
+			name:        "GitLab SSH",
+			remoteURL:   "git@gitlab.com:user/repo.git",
+			branch:      "my-branch",
+			expectedURL: "https://gitlab.com/user/repo/-/merge_requests?scope=all&state=opened&search=my-branch",
+		},
+		{
+			name:        "GitLab self-hosted",
+			remoteURL:   "https://gitlab.mycompany.com/group/repo.git",
+			branch:      "fix/issue-42",
+			expectedURL: "https://gitlab.mycompany.com/group/repo/-/merge_requests?scope=all&state=opened&search=fix%2Fissue-42",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			baseURL := remoteToHTTPS(tt.remoteURL)
+			var got string
+			if isGitLabURL(baseURL) {
+				got = baseURL + "/-/merge_requests?scope=all&state=opened&search=" + strings.ReplaceAll(tt.branch, "/", "%2F")
+			} else {
+				got = baseURL + "/pulls?q=is%3Apr+is%3Aopen+head%3A" + strings.ReplaceAll(tt.branch, "/", "%2F")
+			}
+			if got != tt.expectedURL {
+				t.Errorf("GetMRViewURL(%q, %q) = %q, want %q", tt.remoteURL, tt.branch, got, tt.expectedURL)
+			}
+		})
+	}
+}
+
+func TestGetMRCreateURL(t *testing.T) {
+	tests := []struct {
+		name        string
+		remoteURL   string
+		branch      string
+		expectedURL string
+	}{
+		{
+			name:        "GitHub HTTPS",
+			remoteURL:   "https://github.com/user/repo.git",
+			branch:      "feature/my-branch",
+			expectedURL: "https://github.com/user/repo/compare/feature%2Fmy-branch?expand=1",
+		},
+		{
+			name:        "GitHub SSH",
+			remoteURL:   "git@github.com:user/repo.git",
+			branch:      "main",
+			expectedURL: "https://github.com/user/repo/compare/main?expand=1",
+		},
+		{
+			name:        "GitLab Cloud HTTPS",
+			remoteURL:   "https://gitlab.com/user/repo.git",
+			branch:      "feature/my-branch",
+			expectedURL: "https://gitlab.com/user/repo/-/merge_requests/new?merge_request[source_branch]=feature%2Fmy-branch",
+		},
+		{
+			name:        "GitLab SSH",
+			remoteURL:   "git@gitlab.com:user/repo.git",
+			branch:      "my-branch",
+			expectedURL: "https://gitlab.com/user/repo/-/merge_requests/new?merge_request[source_branch]=my-branch",
+		},
+		{
+			name:        "GitLab self-hosted",
+			remoteURL:   "https://gitlab.mycompany.com/group/repo.git",
+			branch:      "fix/issue-42",
+			expectedURL: "https://gitlab.mycompany.com/group/repo/-/merge_requests/new?merge_request[source_branch]=fix%2Fissue-42",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			baseURL := remoteToHTTPS(tt.remoteURL)
+			var got string
+			if isGitLabURL(baseURL) {
+				got = baseURL + "/-/merge_requests/new?merge_request[source_branch]=" + strings.ReplaceAll(tt.branch, "/", "%2F")
+			} else {
+				got = baseURL + "/compare/" + strings.ReplaceAll(tt.branch, "/", "%2F") + "?expand=1"
+			}
+			if got != tt.expectedURL {
+				t.Errorf("GetMRCreateURL(%q, %q) = %q, want %q", tt.remoteURL, tt.branch, got, tt.expectedURL)
+			}
+		})
+	}
+}

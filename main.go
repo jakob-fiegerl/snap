@@ -37,6 +37,7 @@ func printHelp() {
 		{"replay", "<branch>", "Replay commits onto another branch"},
 		{"reword", "[commit]", "Reword a commit message"},
 		{"tag", "", "Manage tags"},
+		{"mr", "[create]", "Open pull/merge request in browser"},
 	}
 
 	meta := []row{
@@ -239,6 +240,22 @@ Examples:
 Interactive controls:
   Enter               Confirm and apply the new message
   Esc                 Cancel and exit`)
+}
+
+func printMRHelp() {
+	fmt.Println(`Usage: snap mr [SUBCOMMAND]
+
+Open pull request or merge request in your browser.
+
+Subcommands:
+  (none)     Open existing PR/MR for the current branch
+  create     Open PR/MR creation page for the current branch
+
+Supports GitHub, GitLab Cloud, and GitLab self-hosted.
+
+Examples:
+  snap mr           Open current branch's PR/MR
+  snap mr create    Open PR/MR creation page`)
 }
 
 
@@ -639,6 +656,48 @@ func main() {
 			fmt.Printf("Error: %v\n", err)
 			os.Exit(1)
 		}
+
+	case "mr":
+		if hasHelpFlag() {
+			printMRHelp()
+			os.Exit(0)
+		}
+
+		branch, err := GetCurrentBranch()
+		if err != nil {
+			fmt.Printf("Error: could not get current branch: %v\n", err)
+			os.Exit(1)
+		}
+
+		subcommand := ""
+		if len(os.Args) > 2 {
+			subcommand = os.Args[2]
+		}
+
+		var mrURL string
+		switch subcommand {
+		case "create":
+			mrURL, err = GetMRCreateURL(branch)
+		case "":
+			mrURL, err = GetMRViewURL(branch)
+		default:
+			fmt.Printf("Unknown subcommand: %s\n", subcommand)
+			printMRHelp()
+			os.Exit(1)
+		}
+
+		if err != nil {
+			fmt.Printf("Error: %v\n", err)
+			os.Exit(1)
+		}
+
+		fmt.Printf("Opening: %s\n", mrURL)
+		if err := OpenURL(mrURL); err != nil {
+			fmt.Printf("Could not open browser: %v\n", err)
+			fmt.Println("Copy the URL above to open manually.")
+			os.Exit(1)
+		}
+		os.Exit(0)
 
 	default:
 		fmt.Printf("Error: unknown command '%s'\n", command)
